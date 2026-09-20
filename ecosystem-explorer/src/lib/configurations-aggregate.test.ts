@@ -15,7 +15,7 @@
  */
 import { describe, it, expect } from "vitest";
 import type { InstrumentationListEntry, InstrumentationModule } from "@/types/javaagent";
-import { aggregateConfigurations } from "./configurations-aggregate";
+import { aggregateConfigurations, collectOwnedConfigPathKeys } from "./configurations-aggregate";
 
 function makeEntry(
   name: string,
@@ -141,6 +141,84 @@ describe("aggregateConfigurations", () => {
       "java",
       "graphql",
       "capture_query",
+    ]);
+  });
+});
+
+describe("collectOwnedConfigPathKeys", () => {
+  it("returns only owned-scope paths, excluding general.* and java.common.*", () => {
+    const mod = makeModule("graphql_java", [
+      makeEntry("graphql-java-20.0", [
+        {
+          name: "owned-1",
+          declarative_name: "java.graphql.capture_query",
+          description: "",
+          type: "boolean",
+          default: true,
+        },
+        {
+          name: "general-1",
+          declarative_name: "general.http.server.request_captured_headers",
+          description: "",
+          type: "list",
+          default: "",
+        },
+        {
+          name: "common-1",
+          declarative_name: "java.common.http.known_methods",
+          description: "",
+          type: "list",
+          default: "",
+        },
+      ]),
+    ]);
+    expect(collectOwnedConfigPathKeys([mod])).toEqual([
+      "instrumentation/development.java.graphql.capture_query",
+    ]);
+  });
+
+  it("includes an owned option whose default is empty", () => {
+    const mod = makeModule("graphql_java", [
+      makeEntry("graphql-java-20.0", [
+        {
+          name: "owned-empty-default",
+          declarative_name: "graphql.error_extensions",
+          description: "",
+          type: "string",
+          default: "",
+        },
+      ]),
+    ]);
+    expect(collectOwnedConfigPathKeys([mod])).toEqual([
+      "instrumentation/development.graphql.error_extensions",
+    ]);
+  });
+
+  it("dedupes a declarative name shared across modules into a single key", () => {
+    const modA = makeModule("cassandra", [
+      makeEntry("cassandra-3.0", [
+        {
+          name: "otel.x",
+          declarative_name: "graphql.depth",
+          description: "",
+          type: "int",
+          default: 0,
+        },
+      ]),
+    ]);
+    const modB = makeModule("cassandra_ext", [
+      makeEntry("cassandra-ext-1.0", [
+        {
+          name: "otel.y",
+          declarative_name: "graphql.depth",
+          description: "",
+          type: "int",
+          default: 0,
+        },
+      ]),
+    ]);
+    expect(collectOwnedConfigPathKeys([modA, modB])).toEqual([
+      "instrumentation/development.graphql.depth",
     ]);
   });
 });

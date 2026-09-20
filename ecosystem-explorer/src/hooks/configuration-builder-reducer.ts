@@ -34,6 +34,8 @@ export const INITIAL_STATE: ConfigurationBuilderState = {
 };
 
 const INSTRUMENTATION_PATH = ["distribution", "javaagent", "instrumentation"];
+const INSTRUMENTATION_DEV_KEY = "instrumentation/development";
+const INSTRUMENTATION_DEV_PATH = [INSTRUMENTATION_DEV_KEY];
 
 function cleanInstrumentation(values: ConfigValues): ConfigValues {
   if (!values.distribution || typeof values.distribution !== "object") return values;
@@ -85,6 +87,80 @@ function cleanInstrumentation(values: ConfigValues): ConfigValues {
   } else {
     return { ...values, distribution: dist };
   }
+}
+
+/**
+ * Prunes stale *owned*-scope declarative option values from the
+ * `instrumentation/development` subtree (subtree B) when the agent version
+ * changes. `validPaths` is a set of full dot-joined value paths (matching
+ * `AggregatedConfig.path.join(".")`, e.g.
+ * `"instrumentation/development.graphql.depth"`) for options that exist in
+ * the newly-selected version.
+ *
+ * `general.*` and `java.common.*` are version-shared declarative names (see
+ * `classifyScope` in declarative-name.ts) and must never be pruned by this
+ * logic, so they're protected structurally by branch below rather than via
+ * `validPaths` membership — an incomplete allowlist can never delete them.
+ * Everything else under `instrumentation/development` is owned scope and is
+ * a pruning candidate.
+ *
+ * `dottedPrefix` is the full path (including the `instrumentation/development`
+ * root) accumulated so far, so it can be compared directly against
+ * `validPaths` entries.
+ */
+function pruneOwnedDevValues(
+  node: ConfigValues,
+  validPaths: ReadonlySet<string>,
+  dottedPrefix: string
+): { value: ConfigValues; changed: boolean } {
+  let changed = false;
+  const next: ConfigValues = {};
+
+  for (const [key, val] of Object.entries(node)) {
+    const dotted = `${dottedPrefix}.${key}`;
+
+    // `general.*` is always version-shared -- keep the whole branch verbatim.
+    if (dottedPrefix === INSTRUMENTATION_DEV_KEY && key === "general") {
+      next[key] = val;
+      continue;
+    }
+    // `java.common.*` is version-shared too, but `java.*` otherwise is owned
+    // scope (e.g. `java.grpc.*`), so only the `common` child of `java` is
+    // protected -- everything else under `java` prunes normally below.
+    if (dottedPrefix === `${INSTRUMENTATION_DEV_KEY}.java` && key === "common") {
+      next[key] = val;
+      continue;
+    }
+
+    if (validPaths.has(dotted)) {
+      // Exact match for a currently-valid owned option: keep the whole leaf
+      // verbatim, whatever its shape. Do NOT recurse into it -- a `map` or
+      // `structured_list` option's internals are arbitrary user data, not
+      // further declarative-name segments, and recursing would misread map
+      // keys as stale option names and delete them.
+      next[key] = val;
+      continue;
+    }
+
+    if (isPlainObject(val)) {
+      // Not itself a known leaf: either an intermediate namespace for a
+      // still-valid deeper option (recurse to find out) or an orphaned
+      // module/option branch (recursion empties it out entirely below).
+      const result = pruneOwnedDevValues(val, validPaths, dotted);
+      if (Object.keys(result.value).length > 0) {
+        next[key] = result.value;
+      } else {
+        changed = true;
+      }
+      if (result.changed) changed = true;
+      continue;
+    }
+
+    // Primitive/array leaf that isn't a currently-valid path: orphaned, drop it.
+    changed = true;
+  }
+
+  return { value: next, changed };
 }
 
 export function configurationBuilderReducer(
@@ -242,17 +318,48 @@ export function configurationBuilderReducer(
     }
 
     case "PRUNE_INSTRUMENTATIONS": {
-      const current = getByPath(state.values, INSTRUMENTATION_PATH);
-      if (!isPlainObject(current)) return state;
-
-      const valid = new Set(action.validModules);
+      let values = state.values;
       let changed = false;
-      const nextInst: ConfigValues = { ...current };
 
-      for (const key of Object.keys(nextInst)) {
-        if (!valid.has(key)) {
-          delete nextInst[key];
+      // Subtree A: distribution.javaagent.instrumentation.<module> enable/disable flags.
+      const currentInst = getByPath(values, INSTRUMENTATION_PATH);
+      if (isPlainObject(currentInst)) {
+        const validModules = new Set(action.validModules);
+        const nextInst: ConfigValues = { ...currentInst };
+        let instChanged = false;
+
+        for (const key of Object.keys(nextInst)) {
+          if (!validModules.has(key)) {
+            delete nextInst[key];
+            instChanged = true;
+          }
+        }
+
+        if (instChanged) {
           changed = true;
+          values = setByPath(values, INSTRUMENTATION_PATH, nextInst);
+        }
+      }
+
+      // Subtree B: instrumentation/development.* declarative option values.
+      const currentDev = getByPath(values, INSTRUMENTATION_DEV_PATH);
+      if (isPlainObject(currentDev)) {
+        const validPaths = new Set(action.validOwnedConfigPaths);
+        const { value: nextDev, changed: devChanged } = pruneOwnedDevValues(
+          currentDev,
+          validPaths,
+          INSTRUMENTATION_DEV_KEY
+        );
+
+        if (devChanged) {
+          changed = true;
+          if (Object.keys(nextDev).length === 0) {
+            const rest = { ...values };
+            delete rest[INSTRUMENTATION_DEV_KEY];
+            values = rest;
+          } else {
+            values = setByPath(values, INSTRUMENTATION_DEV_PATH, nextDev);
+          }
         }
       }
 
@@ -260,7 +367,7 @@ export function configurationBuilderReducer(
 
       return {
         ...state,
-        values: cleanInstrumentation(setByPath(state.values, INSTRUMENTATION_PATH, nextInst)),
+        values: cleanInstrumentation(values),
       };
     }
 

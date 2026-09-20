@@ -32,6 +32,7 @@ import { ConfigurationBuilderProvider } from "@/hooks/configuration-builder-prov
 import { useConfigurationBuilder } from "@/hooks/use-configuration-builder";
 import { useInstrumentations, useVersions } from "@/hooks/use-javaagent-data";
 import { groupByModule } from "@/lib/normalize-instrumentation";
+import { collectOwnedConfigPathKeys } from "@/lib/configurations-aggregate";
 import { useCustomizedModules } from "@/hooks/use-customized-modules";
 import { filterSupportedConfigVersions } from "@/lib/config-schema-version";
 import type { GroupNode } from "@/types/configuration";
@@ -83,7 +84,16 @@ function PruneInstrumentationsForAgentVersion({ javaAgentVersion }: { javaAgentV
   const { data } = useInstrumentations(javaAgentVersion);
   useEffect(() => {
     if (!data) return;
-    pruneInstrumentations(groupByModule(data).map((m) => m.name));
+    // Even though the SDK tab hides `instrumentation/development` from its own
+    // rendering, it shares `state.values` with the Instrumentation tab, so it
+    // must reconcile subtree B (declarative option values) too -- otherwise
+    // switching versions while parked here leaves stale data that leaks
+    // straight into the YAML preview.
+    const modules = groupByModule(data);
+    pruneInstrumentations(
+      modules.map((m) => m.name),
+      collectOwnedConfigPathKeys(modules)
+    );
   }, [data, pruneInstrumentations]);
   return null;
 }
@@ -283,7 +293,10 @@ function InstrumentationTabBody({
 
   useEffect(() => {
     if (!instrumentationsState.data) return;
-    pruneInstrumentations(modules.map((m) => m.name));
+    pruneInstrumentations(
+      modules.map((m) => m.name),
+      collectOwnedConfigPathKeys(modules)
+    );
   }, [instrumentationsState.data, modules, pruneInstrumentations]);
 
   const devSection = state.values[INSTRUMENTATION_DEV_KEY];

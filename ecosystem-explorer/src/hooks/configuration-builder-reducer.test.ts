@@ -471,73 +471,254 @@ describe("configurationBuilderReducer", () => {
     });
   });
 
+  const DEV_KEY = "instrumentation/development";
+
+  function stateWithDev(devValues: ConfigValues) {
+    return {
+      ...baseState,
+      values: { [DEV_KEY]: devValues },
+    };
+  }
+
+  function getDev(s: ReturnType<typeof configurationBuilderReducer>) {
+    return s.values[DEV_KEY] as ConfigValues | undefined;
+  }
+
   describe("PRUNE_INSTRUMENTATIONS", () => {
-    it("drops customizations for modules absent from the valid set", () => {
-      const before = stateWithInstrumentation({
-        reactor: { enabled: true },
-        thrift: { enabled: false },
-        cassandra: { enabled: false },
+    describe("subtree A (distribution.javaagent.instrumentation)", () => {
+      it("drops customizations for modules absent from the valid set", () => {
+        const before = stateWithInstrumentation({
+          reactor: { enabled: true },
+          thrift: { enabled: false },
+          cassandra: { enabled: false },
+        });
+        const s = configurationBuilderReducer(before, {
+          type: "PRUNE_INSTRUMENTATIONS",
+          validModules: ["reactor", "cassandra"],
+          validOwnedConfigPaths: [],
+        });
+        expect(getInst(s)).toEqual({
+          reactor: { enabled: true },
+          cassandra: { enabled: false },
+        });
       });
-      const s = configurationBuilderReducer(before, {
-        type: "PRUNE_INSTRUMENTATIONS",
-        validModules: ["reactor", "cassandra"],
+
+      it("removes the whole distribution branch when nothing valid remains", () => {
+        const before = stateWithInstrumentation({
+          thrift: { enabled: false },
+          jaxws_2_0_cxf_3_0: { enabled: false },
+        });
+        const s = configurationBuilderReducer(before, {
+          type: "PRUNE_INSTRUMENTATIONS",
+          validModules: ["reactor", "cassandra"],
+          validOwnedConfigPaths: [],
+        });
+        // Now PRUNE_INSTRUMENTATIONS correctly removes the whole empty branch
+        expect(getInst(s)).toBeUndefined();
+        expect(s.values.distribution).toBeUndefined();
       });
-      expect(getInst(s)).toEqual({
-        reactor: { enabled: true },
-        cassandra: { enabled: false },
+
+      it("returns the same state reference when nothing needs pruning", () => {
+        const before = stateWithInstrumentation({
+          reactor: { enabled: true },
+          cassandra: { enabled: false },
+        });
+        const s = configurationBuilderReducer(before, {
+          type: "PRUNE_INSTRUMENTATIONS",
+          validModules: ["reactor", "cassandra", "thrift"],
+          validOwnedConfigPaths: [],
+        });
+        expect(s).toBe(before);
+      });
+
+      it("is a no-op when no instrumentation customizations are present", () => {
+        const s = configurationBuilderReducer(baseState, {
+          type: "PRUNE_INSTRUMENTATIONS",
+          validModules: ["reactor"],
+          validOwnedConfigPaths: [],
+        });
+        expect(s).toBe(baseState);
+      });
+
+      it("does not mark the state dirty (the prune is system-driven, not user-driven)", () => {
+        const before = stateWithInstrumentation({ thrift: { enabled: false } });
+        const s = configurationBuilderReducer(before, {
+          type: "PRUNE_INSTRUMENTATIONS",
+          validModules: ["reactor"],
+          validOwnedConfigPaths: [],
+        });
+        expect(s.isDirty).toBe(false);
+      });
+
+      it("preserves an existing dirty flag", () => {
+        const before = {
+          ...stateWithInstrumentation({ thrift: { enabled: false } }),
+          isDirty: true,
+        };
+        const s = configurationBuilderReducer(before, {
+          type: "PRUNE_INSTRUMENTATIONS",
+          validModules: ["reactor"],
+          validOwnedConfigPaths: [],
+        });
+        expect(s.isDirty).toBe(true);
       });
     });
 
-    it("removes the whole distribution branch when nothing valid remains", () => {
-      const before = stateWithInstrumentation({
-        thrift: { enabled: false },
-        jaxws_2_0_cxf_3_0: { enabled: false },
+    describe("subtree B (instrumentation/development)", () => {
+      it("drops an orphaned owned-scope leaf while keeping a currently-valid sibling", () => {
+        const before = stateWithDev({
+          graphql: { depth: 5 },
+          cassandra: { keyspace: "orders" },
+        });
+        const s = configurationBuilderReducer(before, {
+          type: "PRUNE_INSTRUMENTATIONS",
+          validModules: [],
+          validOwnedConfigPaths: [`${DEV_KEY}.cassandra.keyspace`],
+        });
+        expect(getDev(s)).toEqual({ cassandra: { keyspace: "orders" } });
       });
-      const s = configurationBuilderReducer(before, {
-        type: "PRUNE_INSTRUMENTATIONS",
-        validModules: ["reactor", "cassandra"],
+
+      it("keeps general.* verbatim even when validOwnedConfigPaths is empty", () => {
+        const before = stateWithDev({
+          general: { stability_opt_in_list: ["http"] },
+          graphql: { depth: 5 },
+        });
+        const s = configurationBuilderReducer(before, {
+          type: "PRUNE_INSTRUMENTATIONS",
+          validModules: [],
+          validOwnedConfigPaths: [],
+        });
+        expect(getDev(s)).toEqual({ general: { stability_opt_in_list: ["http"] } });
       });
-      // Now PRUNE_INSTRUMENTATIONS correctly removes the whole empty branch
-      expect(getInst(s)).toBeUndefined();
-      expect(s.values.distribution).toBeUndefined();
+
+      it("keeps java.common.* verbatim while pruning a sibling owned java.* leaf", () => {
+        const before = stateWithDev({
+          java: {
+            common: { db: { query_sanitization: { enabled: true } } },
+            grpc: { capture_metadata: { client: { request: ["x-req-id"] } } },
+          },
+        });
+        const s = configurationBuilderReducer(before, {
+          type: "PRUNE_INSTRUMENTATIONS",
+          validModules: [],
+          validOwnedConfigPaths: [],
+        });
+        expect(getDev(s)).toEqual({
+          java: { common: { db: { query_sanitization: { enabled: true } } } },
+        });
+      });
+
+      it("removes the whole instrumentation/development key when nothing valid remains", () => {
+        const before = stateWithDev({ graphql: { depth: 5 } });
+        const s = configurationBuilderReducer(before, {
+          type: "PRUNE_INSTRUMENTATIONS",
+          validModules: [],
+          validOwnedConfigPaths: [],
+        });
+        expect(getDev(s)).toBeUndefined();
+        expect(DEV_KEY in s.values).toBe(false);
+      });
+
+      it("keeps a map-shaped leaf verbatim without recursing into its entries", () => {
+        // If the walker recursed into a matched leaf, "x-custom-key" would be
+        // misread as an unknown declarative-name segment and dropped.
+        const before = stateWithDev({
+          graphql: { headers: { "x-custom-key": "value", other: "value2" } },
+        });
+        const s = configurationBuilderReducer(before, {
+          type: "PRUNE_INSTRUMENTATIONS",
+          validModules: [],
+          validOwnedConfigPaths: [`${DEV_KEY}.graphql.headers`],
+        });
+        expect(getDev(s)).toEqual({
+          graphql: { headers: { "x-custom-key": "value", other: "value2" } },
+        });
+      });
+
+      it("recurses correctly through a multi-segment (depth 5) declarative name", () => {
+        const before = stateWithDev({
+          java: { grpc: { capture_metadata: { client: { request: ["x-req-id"] } } } },
+        });
+        const s = configurationBuilderReducer(before, {
+          type: "PRUNE_INSTRUMENTATIONS",
+          validModules: [],
+          validOwnedConfigPaths: [`${DEV_KEY}.java.grpc.capture_metadata.client.request`],
+        });
+        expect(getDev(s)).toEqual({
+          java: { grpc: { capture_metadata: { client: { request: ["x-req-id"] } } } },
+        });
+      });
+
+      it("prunes a structured_list-shaped (array) leaf just like a primitive", () => {
+        const before = stateWithDev({
+          graphql: { depth: 5, error_extensions: ["code"] },
+        });
+        const s = configurationBuilderReducer(before, {
+          type: "PRUNE_INSTRUMENTATIONS",
+          validModules: [],
+          validOwnedConfigPaths: [`${DEV_KEY}.graphql.depth`],
+        });
+        expect(getDev(s)).toEqual({ graphql: { depth: 5 } });
+      });
+
+      it("returns the same state reference when subtree B is already consistent", () => {
+        const before = stateWithDev({ graphql: { depth: 5 } });
+        const s = configurationBuilderReducer(before, {
+          type: "PRUNE_INSTRUMENTATIONS",
+          validModules: [],
+          validOwnedConfigPaths: [`${DEV_KEY}.graphql.depth`],
+        });
+        expect(s).toBe(before);
+      });
+
+      it("does not mark the state dirty", () => {
+        const before = stateWithDev({ graphql: { depth: 5 } });
+        const s = configurationBuilderReducer(before, {
+          type: "PRUNE_INSTRUMENTATIONS",
+          validModules: [],
+          validOwnedConfigPaths: [],
+        });
+        expect(s.isDirty).toBe(false);
+      });
+
+      it("preserves an existing dirty flag", () => {
+        const before = { ...stateWithDev({ graphql: { depth: 5 } }), isDirty: true };
+        const s = configurationBuilderReducer(before, {
+          type: "PRUNE_INSTRUMENTATIONS",
+          validModules: [],
+          validOwnedConfigPaths: [],
+        });
+        expect(s.isDirty).toBe(true);
+      });
     });
 
-    it("returns the same state reference when nothing needs pruning", () => {
-      const before = stateWithInstrumentation({
-        reactor: { enabled: true },
-        cassandra: { enabled: false },
+    describe("combined", () => {
+      it("prunes a removed module from subtree A and its owned options from subtree B in one dispatch", () => {
+        const before: ConfigurationBuilderState = {
+          ...baseState,
+          values: {
+            distribution: {
+              javaagent: {
+                instrumentation: {
+                  reactor: { enabled: true },
+                  cassandra: { enabled: false },
+                },
+              },
+            },
+            [DEV_KEY]: {
+              graphql: { depth: 5 },
+              cassandra: { keyspace: "orders" },
+            },
+          },
+        };
+        const s = configurationBuilderReducer(before, {
+          type: "PRUNE_INSTRUMENTATIONS",
+          validModules: ["reactor"],
+          validOwnedConfigPaths: [],
+        });
+        expect(getInst(s)).toEqual({ reactor: { enabled: true } });
+        expect(getDev(s)).toBeUndefined();
       });
-      const s = configurationBuilderReducer(before, {
-        type: "PRUNE_INSTRUMENTATIONS",
-        validModules: ["reactor", "cassandra", "thrift"],
-      });
-      expect(s).toBe(before);
-    });
-
-    it("is a no-op when no instrumentation customizations are present", () => {
-      const s = configurationBuilderReducer(baseState, {
-        type: "PRUNE_INSTRUMENTATIONS",
-        validModules: ["reactor"],
-      });
-      expect(s).toBe(baseState);
-    });
-
-    it("does not mark the state dirty (the prune is system-driven, not user-driven)", () => {
-      const before = stateWithInstrumentation({ thrift: { enabled: false } });
-      const s = configurationBuilderReducer(before, {
-        type: "PRUNE_INSTRUMENTATIONS",
-        validModules: ["reactor"],
-      });
-      expect(s.isDirty).toBe(false);
-    });
-
-    it("preserves an existing dirty flag", () => {
-      const before = { ...stateWithInstrumentation({ thrift: { enabled: false } }), isDirty: true };
-      const s = configurationBuilderReducer(before, {
-        type: "PRUNE_INSTRUMENTATIONS",
-        validModules: ["reactor"],
-      });
-      expect(s.isDirty).toBe(true);
     });
   });
 });

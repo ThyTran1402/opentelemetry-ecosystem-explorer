@@ -56,3 +56,31 @@ export function aggregateConfigurations(module: InstrumentationModule): Aggregat
 
   return aggregated;
 }
+
+/**
+ * Every owned-scope declarative option path across the given modules, as
+ * dot-joined value paths (`AggregatedConfig.path.join(".")`, e.g.
+ * `"instrumentation/development.graphql.depth"`). Used to allowlist the
+ * `instrumentation/development` subtree when pruning stale option values on
+ * an agent-version switch (see PRUNE_INSTRUMENTATIONS in
+ * configuration-builder-reducer.ts). `general.*`/`java.common.*` paths are
+ * intentionally excluded — they're version-shared, and the reducer protects
+ * them structurally regardless of this allowlist.
+ *
+ * Deliberately does NOT reuse `buildInstrumentationDefaultEntries`: that
+ * function drops options whose *default* value is empty, since an empty
+ * default wouldn't appear in a bulk-add. Here we need every currently-valid
+ * owned option name regardless of its default, or a option the user set to a
+ * non-empty value (whose default happens to be empty) would be missing from
+ * the allowlist and incorrectly pruned.
+ */
+export function collectOwnedConfigPathKeys(modules: InstrumentationModule[]): string[] {
+  const keys = new Set<string>();
+  for (const mod of modules) {
+    for (const cfg of aggregateConfigurations(mod)) {
+      if (cfg.scope !== "owned") continue;
+      keys.add(cfg.path.join("."));
+    }
+  }
+  return [...keys];
+}
