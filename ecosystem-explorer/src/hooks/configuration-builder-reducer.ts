@@ -80,7 +80,6 @@ function pruneJavaDevValues(
   return { value: changed ? next : node, changed };
 }
 
-/** Subtree A: `distribution.javaagent.instrumentation.<module>` keyed by module name. */
 function pruneModuleCustomizations(
   values: ConfigValues,
   validModules: readonly string[]
@@ -103,7 +102,6 @@ function pruneModuleCustomizations(
   return cleanInstrumentation(setByPath(values, INSTRUMENTATION_PATH, nextInst));
 }
 
-/** Subtree B: `instrumentation/development.java.*` keyed by declarative name. */
 function pruneDeclarativeValues(
   values: ConfigValues,
   validDeclarativeNames: readonly string[]
