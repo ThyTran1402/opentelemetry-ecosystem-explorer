@@ -481,6 +481,7 @@ describe("configurationBuilderReducer", () => {
       const s = configurationBuilderReducer(before, {
         type: "PRUNE_INSTRUMENTATIONS",
         validModules: ["reactor", "cassandra"],
+        validDeclarativeNames: [],
       });
       expect(getInst(s)).toEqual({
         reactor: { enabled: true },
@@ -496,6 +497,7 @@ describe("configurationBuilderReducer", () => {
       const s = configurationBuilderReducer(before, {
         type: "PRUNE_INSTRUMENTATIONS",
         validModules: ["reactor", "cassandra"],
+        validDeclarativeNames: [],
       });
       // Now PRUNE_INSTRUMENTATIONS correctly removes the whole empty branch
       expect(getInst(s)).toBeUndefined();
@@ -510,6 +512,7 @@ describe("configurationBuilderReducer", () => {
       const s = configurationBuilderReducer(before, {
         type: "PRUNE_INSTRUMENTATIONS",
         validModules: ["reactor", "cassandra", "thrift"],
+        validDeclarativeNames: [],
       });
       expect(s).toBe(before);
     });
@@ -518,6 +521,7 @@ describe("configurationBuilderReducer", () => {
       const s = configurationBuilderReducer(baseState, {
         type: "PRUNE_INSTRUMENTATIONS",
         validModules: ["reactor"],
+        validDeclarativeNames: [],
       });
       expect(s).toBe(baseState);
     });
@@ -527,6 +531,7 @@ describe("configurationBuilderReducer", () => {
       const s = configurationBuilderReducer(before, {
         type: "PRUNE_INSTRUMENTATIONS",
         validModules: ["reactor"],
+        validDeclarativeNames: [],
       });
       expect(s.isDirty).toBe(false);
     });
@@ -536,8 +541,149 @@ describe("configurationBuilderReducer", () => {
       const s = configurationBuilderReducer(before, {
         type: "PRUNE_INSTRUMENTATIONS",
         validModules: ["reactor"],
+        validDeclarativeNames: [],
       });
       expect(s.isDirty).toBe(true);
+    });
+
+    describe("instrumentation/development option values", () => {
+      const DEV = "instrumentation/development";
+
+      function stateWithDev(dev: ConfigValues, extra: ConfigValues = {}) {
+        return { ...baseState, values: { ...extra, [DEV]: dev } };
+      }
+
+      function prune(before: ConfigurationBuilderState, validDeclarativeNames: string[]) {
+        return configurationBuilderReducer(before, {
+          type: "PRUNE_INSTRUMENTATIONS",
+          validModules: [],
+          validDeclarativeNames,
+        });
+      }
+
+      it("drops an owned option absent from the allowlist and keeps a valid one", () => {
+        const before = stateWithDev({
+          java: { graphql: { query_sanitizer: { enabled: false } }, kafka: { x: true } },
+        });
+        const s = prune(before, ["java.kafka.x"]);
+        expect(s.values[DEV]).toEqual({ java: { kafka: { x: true } } });
+      });
+
+      it("prunes java.common.* against the allowlist like owned options", () => {
+        const before = stateWithDev({
+          java: {
+            common: {
+              user: { name: { enabled: true } },
+              db: { query_sanitization: { enabled: false } },
+            },
+          },
+        });
+        const s = prune(before, ["java.common.db.query_sanitization.enabled"]);
+        expect(s.values[DEV]).toEqual({
+          java: { common: { db: { query_sanitization: { enabled: false } } } },
+        });
+      });
+
+      it("keeps general.* verbatim even with an empty allowlist", () => {
+        const general = { http: { client: { request_captured_headers: ["x-a"] } } };
+        const before = stateWithDev({ general, java: { cassandra: { x: 1 } } });
+        const s = prune(before, []);
+        expect(s.values[DEV]).toEqual({ general });
+      });
+
+      it("leaves non-java language keys untouched", () => {
+        const before = stateWithDev({ python: { foo: 1 }, java: { gone: true } });
+        const s = prune(before, []);
+        expect(s.values[DEV]).toEqual({ python: { foo: 1 } });
+      });
+
+      it("keeps a valid map-typed option's user entries instead of recursing into them", () => {
+        const mapping = { "10.0.0.1": "db", "10.0.0.2": "cache" };
+        const before = stateWithDev({ java: { common: { service_peer_mapping: mapping } } });
+        const s = prune(before, ["java.common.service_peer_mapping"]);
+        expect(s).toBe(before);
+      });
+
+      it("treats list values as atomic leaves", () => {
+        const before = stateWithDev({
+          java: { a: { rules: [{ pattern: "x" }] }, b: { rules: [{ pattern: "y" }] } },
+        });
+        const s = prune(before, ["java.a.rules"]);
+        expect(s.values[DEV]).toEqual({ java: { a: { rules: [{ pattern: "x" }] } } });
+      });
+
+      it("recurses through deep names and removes emptied intermediate branches", () => {
+        const before = stateWithDev({
+          java: {
+            common: {
+              messaging: {
+                batch_send: { message_creation_spans: { enabled: true } },
+                "headers/development": { included: ["a"] },
+              },
+            },
+          },
+        });
+        const s = prune(before, [
+          "java.common.messaging.batch_send.message_creation_spans.enabled",
+        ]);
+        expect(s.values[DEV]).toEqual({
+          java: {
+            common: { messaging: { batch_send: { message_creation_spans: { enabled: true } } } },
+          },
+        });
+      });
+
+      it("removes the whole instrumentation/development key when nothing remains", () => {
+        const before = stateWithDev({ java: { graphql: { depth: 3 } } }, { resource: { a: 1 } });
+        const s = prune(before, []);
+        expect(s.values[DEV]).toBeUndefined();
+        expect(s.values.resource).toEqual({ a: 1 });
+      });
+
+      it("returns the same state reference when every value is still valid", () => {
+        const before = stateWithDev({
+          general: { x: 1 },
+          java: { kafka: { x: true }, common: { http: { known_methods: ["GET"] } } },
+        });
+        const s = prune(before, ["java.kafka.x", "java.common.http.known_methods"]);
+        expect(s).toBe(before);
+      });
+
+      it("does not touch isDirty", () => {
+        const clean = prune(stateWithDev({ java: { gone: 1 } }), []);
+        expect(clean.isDirty).toBe(false);
+        const dirty = prune({ ...stateWithDev({ java: { gone: 1 } }), isDirty: true }, []);
+        expect(dirty.isDirty).toBe(true);
+      });
+
+      it("prunes a removed module from both subtrees in a single dispatch", () => {
+        const before: ConfigurationBuilderState = {
+          ...baseState,
+          values: {
+            distribution: {
+              javaagent: {
+                instrumentation: { cassandra: { enabled: false }, kafka: { enabled: true } },
+              },
+            },
+            [DEV]: {
+              java: {
+                cassandra: { query_sanitizer: { enabled: false } },
+                graphql: { depth: 3 },
+                kafka: { x: true },
+              },
+            },
+          },
+        };
+        const s = configurationBuilderReducer(before, {
+          type: "PRUNE_INSTRUMENTATIONS",
+          validModules: ["kafka"],
+          validDeclarativeNames: ["java.kafka.x"],
+        });
+        expect(s.values).toEqual({
+          distribution: { javaagent: { instrumentation: { kafka: { enabled: true } } } },
+          [DEV]: { java: { kafka: { x: true } } },
+        });
+      });
     });
   });
 });

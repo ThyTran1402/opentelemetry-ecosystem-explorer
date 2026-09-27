@@ -34,6 +34,103 @@ export const INITIAL_STATE: ConfigurationBuilderState = {
 };
 
 const INSTRUMENTATION_PATH = ["distribution", "javaagent", "instrumentation"];
+const INSTRUMENTATION_DEV_KEY = "instrumentation/development";
+// Only the `java` branch of instrumentation/development is reconciled against
+// the per-version inventory. `general` is schema-typed (pinned by
+// MAX_SUPPORTED_CONFIG_SCHEMA_VERSION) and other language keys are not
+// described by the Java agent inventory at all, so both are left untouched.
+const JAVA_DEV_KEY = "java";
+
+/**
+ * Drops leaves under `instrumentation/development.java` whose declarative name
+ * is not in `valid`. `prefix` is the dotted declarative name of `node` (e.g.
+ * "java" or "java.common"), so a leaf's key maps 1:1 onto a declarative name.
+ */
+function pruneJavaDevValues(
+  node: ConfigValues,
+  valid: ReadonlySet<string>,
+  prefix: string
+): { value: ConfigValues; changed: boolean } {
+  let changed = false;
+  const next: ConfigValues = {};
+  for (const [key, val] of Object.entries(node)) {
+    const name = `${prefix}.${key}`;
+    // Check for an exact match before recursing: a valid map-typed option is
+    // a plain object whose keys are user data, not declarative-name segments,
+    // so descending into it would prune the user's map entries.
+    if (valid.has(name)) {
+      next[key] = val;
+      continue;
+    }
+    if (isPlainObject(val)) {
+      // Either an intermediate namespace for a still-valid deeper option, or
+      // an orphaned branch that recursion empties out entirely.
+      const result = pruneJavaDevValues(val, valid, name);
+      if (Object.keys(result.value).length === 0) {
+        changed = true;
+      } else {
+        next[key] = result.value;
+        if (result.changed) changed = true;
+      }
+      continue;
+    }
+    // Primitive or array leaf with no matching declarative name in this version.
+    changed = true;
+  }
+  return { value: changed ? next : node, changed };
+}
+
+/** Subtree A: `distribution.javaagent.instrumentation.<module>` keyed by module name. */
+function pruneModuleCustomizations(
+  values: ConfigValues,
+  validModules: readonly string[]
+): ConfigValues {
+  const current = getByPath(values, INSTRUMENTATION_PATH);
+  if (!isPlainObject(current)) return values;
+
+  const valid = new Set(validModules);
+  let changed = false;
+  const nextInst: ConfigValues = { ...current };
+
+  for (const key of Object.keys(nextInst)) {
+    if (!valid.has(key)) {
+      delete nextInst[key];
+      changed = true;
+    }
+  }
+
+  if (!changed) return values;
+  return cleanInstrumentation(setByPath(values, INSTRUMENTATION_PATH, nextInst));
+}
+
+/** Subtree B: `instrumentation/development.java.*` keyed by declarative name. */
+function pruneDeclarativeValues(
+  values: ConfigValues,
+  validDeclarativeNames: readonly string[]
+): ConfigValues {
+  const dev = values[INSTRUMENTATION_DEV_KEY];
+  if (!isPlainObject(dev)) return values;
+  const java = dev[JAVA_DEV_KEY];
+  if (!isPlainObject(java)) return values;
+
+  const result = pruneJavaDevValues(java, new Set(validDeclarativeNames), JAVA_DEV_KEY);
+  if (!result.changed) return values;
+
+  // Mirror cleanInstrumentation: collapse emptied branches instead of leaving `{}` behind.
+  const nextDev: ConfigValues = { ...dev };
+  if (Object.keys(result.value).length === 0) {
+    delete nextDev[JAVA_DEV_KEY];
+  } else {
+    nextDev[JAVA_DEV_KEY] = result.value;
+  }
+  const nextValues: ConfigValues = { ...values };
+  if (Object.keys(nextDev).length === 0) {
+    delete nextValues[INSTRUMENTATION_DEV_KEY];
+  } else {
+    nextValues[INSTRUMENTATION_DEV_KEY] = nextDev;
+  }
+  return nextValues;
+}
 
 function cleanInstrumentation(values: ConfigValues): ConfigValues {
   if (!values.distribution || typeof values.distribution !== "object") return values;
@@ -242,26 +339,14 @@ export function configurationBuilderReducer(
     }
 
     case "PRUNE_INSTRUMENTATIONS": {
-      const current = getByPath(state.values, INSTRUMENTATION_PATH);
-      if (!isPlainObject(current)) return state;
-
-      const valid = new Set(action.validModules);
-      let changed = false;
-      const nextInst: ConfigValues = { ...current };
-
-      for (const key of Object.keys(nextInst)) {
-        if (!valid.has(key)) {
-          delete nextInst[key];
-          changed = true;
-        }
-      }
-
-      if (!changed) return state;
-
-      return {
-        ...state,
-        values: cleanInstrumentation(setByPath(state.values, INSTRUMENTATION_PATH, nextInst)),
-      };
+      // One action reconciles both subtrees so the two call sites stay in
+      // sync. Pruning is system-driven, so isDirty is left as-is.
+      const values = pruneDeclarativeValues(
+        pruneModuleCustomizations(state.values, action.validModules),
+        action.validDeclarativeNames
+      );
+      if (values === state.values) return state;
+      return { ...state, values };
     }
 
     default:

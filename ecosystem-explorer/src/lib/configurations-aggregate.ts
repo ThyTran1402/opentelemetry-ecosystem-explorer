@@ -56,3 +56,29 @@ export function aggregateConfigurations(module: InstrumentationModule): Aggregat
 
   return aggregated;
 }
+
+/**
+ * Every non-general declarative name (owned and java.common.*) across the
+ * given modules. This is the allowlist PRUNE_INSTRUMENTATIONS uses to drop
+ * stale `instrumentation/development.java.*` values after an agent-version
+ * switch: the schema types `java` as a bare key_value_map, so the per-version
+ * inventory is the only source of which names exist.
+ *
+ * general.* is excluded on purpose. Its validity comes from the (pinned)
+ * config schema, and the inventory only mentions a handful of its leaves, so
+ * allowlisting it here would delete fields the General card owns.
+ *
+ * Do not derive this from buildInstrumentationDefaultEntries: that skips
+ * options with empty defaults, so a user-set value for such an option would be
+ * missing from the allowlist and wrongly pruned.
+ */
+export function collectVersionedDeclarativeNames(modules: InstrumentationModule[]): string[] {
+  const names = new Set<string>();
+  for (const mod of modules) {
+    for (const cfg of aggregateConfigurations(mod)) {
+      if (cfg.scope === "general") continue;
+      if (cfg.entry.declarative_name) names.add(cfg.entry.declarative_name);
+    }
+  }
+  return [...names];
+}

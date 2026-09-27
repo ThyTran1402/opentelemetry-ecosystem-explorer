@@ -15,7 +15,10 @@
  */
 import { describe, it, expect } from "vitest";
 import type { InstrumentationListEntry, InstrumentationModule } from "@/types/javaagent";
-import { aggregateConfigurations } from "./configurations-aggregate";
+import {
+  aggregateConfigurations,
+  collectVersionedDeclarativeNames,
+} from "./configurations-aggregate";
 
 function makeEntry(
   name: string,
@@ -141,6 +144,55 @@ describe("aggregateConfigurations", () => {
       "java",
       "graphql",
       "capture_query",
+    ]);
+  });
+});
+
+describe("collectVersionedDeclarativeNames", () => {
+  function cfg(
+    declarative_name: string,
+    type: "boolean" | "string" = "boolean",
+    def: string | boolean = true
+  ) {
+    return {
+      name: `otel.${declarative_name}`,
+      declarative_name,
+      description: "",
+      type,
+      default: def,
+    };
+  }
+
+  it("includes owned and java.common names but excludes general.*", () => {
+    const mod = makeModule("kafka", [
+      makeEntry("kafka-clients-2.6", [
+        cfg("general.http.client.request_captured_headers"),
+        cfg("java.common.messaging.capture_headers/development"),
+        cfg("java.kafka.producer_propagation.enabled"),
+      ]),
+    ]);
+    expect(collectVersionedDeclarativeNames([mod]).sort()).toEqual([
+      "java.common.messaging.capture_headers/development",
+      "java.kafka.producer_propagation.enabled",
+    ]);
+  });
+
+  it("includes options whose default is empty", () => {
+    const mod = makeModule("graphql_java", [
+      makeEntry("graphql-java-20.0", [cfg("java.graphql.operation_name", "string", "")]),
+    ]);
+    expect(collectVersionedDeclarativeNames([mod])).toEqual(["java.graphql.operation_name"]);
+  });
+
+  it("dedupes names shared across modules", () => {
+    const a = makeModule("jdbc", [
+      makeEntry("jdbc", [cfg("java.common.db.query_sanitization.enabled")]),
+    ]);
+    const b = makeModule("cassandra", [
+      makeEntry("cassandra-4.0", [cfg("java.common.db.query_sanitization.enabled")]),
+    ]);
+    expect(collectVersionedDeclarativeNames([a, b])).toEqual([
+      "java.common.db.query_sanitization.enabled",
     ]);
   });
 });

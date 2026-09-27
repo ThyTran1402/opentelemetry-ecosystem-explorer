@@ -57,4 +57,9 @@ export type ConfigurationBuilderAction =
   | { type: "SET_FIELD_ERROR"; path: string; error: string | null }
   | { type: "ENABLE_ALL_SECTIONS"; defaultsBySection: Record<string, ConfigValues> }
   | { type: "MERGE_DEFAULTS"; entries: { path: Path; value: ConfigValue }[] }
-  | { type: "PRUNE_INSTRUMENTATIONS"; validModules: readonly string[] };
+  | {
+      type: "PRUNE_INSTRUMENTATIONS";
+      validModules: readonly string[];
+      /** Non-general declarative names valid for the selected agent version. */
+      validDeclarativeNames: readonly string[];
+    };
