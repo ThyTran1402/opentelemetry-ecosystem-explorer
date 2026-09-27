@@ -74,7 +74,6 @@ function pruneJavaDevValues(
       }
       continue;
     }
-    // Primitive or array leaf with no matching declarative name in this version.
     changed = true;
   }
   return { value: changed ? next : node, changed };
@@ -114,7 +113,6 @@ function pruneDeclarativeValues(
   const result = pruneJavaDevValues(java, new Set(validDeclarativeNames), JAVA_DEV_KEY);
   if (!result.changed) return values;
 
-  // Mirror cleanInstrumentation: collapse emptied branches instead of leaving `{}` behind.
   const nextDev: ConfigValues = { ...dev };
   if (Object.keys(result.value).length === 0) {
     delete nextDev[JAVA_DEV_KEY];
@@ -337,8 +335,7 @@ export function configurationBuilderReducer(
     }
 
     case "PRUNE_INSTRUMENTATIONS": {
-      // One action reconciles both subtrees so the two call sites stay in
-      // sync. Pruning is system-driven, so isDirty is left as-is.
+      // Pruning is system-driven, so isDirty is left as-is.
       const values = pruneDeclarativeValues(
         pruneModuleCustomizations(state.values, action.validModules),
         action.validDeclarativeNames
