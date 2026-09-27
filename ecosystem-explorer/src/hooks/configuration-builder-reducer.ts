@@ -22,6 +22,7 @@ import type {
 import { getByPath, setByPath, serializePath } from "@/lib/config-path";
 import { hasUserValues } from "@/lib/state-hydrate";
 import { isPlainObject } from "@/lib/value-guards";
+import { INSTRUMENTATION_DEV_KEY } from "@/lib/declarative-name";
 import { buildListItemIds, generateListItemId } from "@/lib/build-list-item-ids";
 
 export const INITIAL_STATE: ConfigurationBuilderState = {
@@ -34,7 +35,6 @@ export const INITIAL_STATE: ConfigurationBuilderState = {
 };
 
 const INSTRUMENTATION_PATH = ["distribution", "javaagent", "instrumentation"];
-const INSTRUMENTATION_DEV_KEY = "instrumentation/development";
 // Only the `java` branch of instrumentation/development is reconciled against
 // the per-version inventory. `general` is schema-typed (pinned by
 // MAX_SUPPORTED_CONFIG_SCHEMA_VERSION) and other language keys are not

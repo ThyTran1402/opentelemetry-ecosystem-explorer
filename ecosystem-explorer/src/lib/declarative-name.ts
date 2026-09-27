@@ -18,7 +18,7 @@ import type { ConfigValue, Path } from "@/types/configuration-builder";
 
 export type DeclarativeScope = "general" | "common" | "owned";
 
-const ROOT_SECTION = "instrumentation/development";
+export const INSTRUMENTATION_DEV_KEY = "instrumentation/development";
 
 export function classifyScope(declarativeName: string): DeclarativeScope {
   if (declarativeName.startsWith("general.")) return "general";
@@ -27,7 +27,7 @@ export function classifyScope(declarativeName: string): DeclarativeScope {
 }
 
 export function toValuePath(declarativeName: string): Path {
-  return [ROOT_SECTION, ...declarativeName.split(".")];
+  return [INSTRUMENTATION_DEV_KEY, ...declarativeName.split(".")];
 }
 
 /** True when the entry renders as a structured list (array of objects) rather than its raw type. */

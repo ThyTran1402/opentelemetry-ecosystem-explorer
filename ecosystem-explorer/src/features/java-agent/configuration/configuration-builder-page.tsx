@@ -33,6 +33,7 @@ import { useConfigurationBuilder } from "@/hooks/use-configuration-builder";
 import { useInstrumentations, useVersions } from "@/hooks/use-javaagent-data";
 import { groupByModule } from "@/lib/normalize-instrumentation";
 import { collectVersionedDeclarativeNames } from "@/lib/configurations-aggregate";
+import { INSTRUMENTATION_DEV_KEY } from "@/lib/declarative-name";
 import { useCustomizedModules } from "@/hooks/use-customized-modules";
 import { filterSupportedConfigVersions } from "@/lib/config-schema-version";
 import type { GroupNode } from "@/types/configuration";
@@ -72,7 +73,6 @@ const SDK_HIDDEN_KEYS = HIDDEN_KEYS_BY_TAB.sdk;
 // pushed off-screen.
 const BUILDER_GRID = "grid grid-cols-1 gap-6 lg:grid-cols-[256px_minmax(0,1fr)_420px] lg:gap-7";
 
-const INSTRUMENTATION_DEV_KEY = "instrumentation/development";
 const GENERAL_SUBKEY = "general";
 const INSTRUMENTATIONS_SECTION_KEY = "instrumentations";
 
