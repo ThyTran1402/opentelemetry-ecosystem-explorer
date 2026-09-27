@@ -32,7 +32,6 @@ import { ConfigurationBuilderProvider } from "@/hooks/configuration-builder-prov
 import { useConfigurationBuilder } from "@/hooks/use-configuration-builder";
 import { useInstrumentations, useVersions } from "@/hooks/use-javaagent-data";
 import { groupByModule } from "@/lib/normalize-instrumentation";
-import { collectVersionedDeclarativeNames } from "@/lib/configurations-aggregate";
 import { INSTRUMENTATION_DEV_KEY } from "@/lib/declarative-name";
 import { useCustomizedModules } from "@/hooks/use-customized-modules";
 import { filterSupportedConfigVersions } from "@/lib/config-schema-version";
@@ -76,21 +75,15 @@ const BUILDER_GRID = "grid grid-cols-1 gap-6 lg:grid-cols-[256px_minmax(0,1fr)_4
 const GENERAL_SUBKEY = "general";
 const INSTRUMENTATIONS_SECTION_KEY = "instrumentations";
 
-// Drops instrumentation customizations (module enable/disable flags and
-// instrumentation/development.java.* option values) that the selected agent
-// version doesn't have. Without this, switching from a newer agent (where a
-// module or option exists) to an older one would leak orphan entries into the
-// YAML output.
+// Drops instrumentation customizations that reference modules not present in the
+// selected agent version. Without this, switching from a newer agent (where a
+// module exists) to an older one would leak orphan entries into the YAML output.
 function PruneInstrumentationsForAgentVersion({ javaAgentVersion }: { javaAgentVersion: string }) {
   const { pruneInstrumentations } = useConfigurationBuilder();
   const { data } = useInstrumentations(javaAgentVersion);
   useEffect(() => {
     if (!data) return;
-    const modules = groupByModule(data);
-    pruneInstrumentations(
-      modules.map((m) => m.name),
-      collectVersionedDeclarativeNames(modules)
-    );
+    pruneInstrumentations(groupByModule(data).map((m) => m.name));
   }, [data, pruneInstrumentations]);
   return null;
 }
@@ -290,10 +283,7 @@ function InstrumentationTabBody({
 
   useEffect(() => {
     if (!instrumentationsState.data) return;
-    pruneInstrumentations(
-      modules.map((m) => m.name),
-      collectVersionedDeclarativeNames(modules)
-    );
+    pruneInstrumentations(modules.map((m) => m.name));
   }, [instrumentationsState.data, modules, pruneInstrumentations]);
 
   const devSection = state.values[INSTRUMENTATION_DEV_KEY];

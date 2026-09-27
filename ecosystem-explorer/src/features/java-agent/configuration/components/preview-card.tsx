@@ -18,6 +18,9 @@ import { useTranslation } from "react-i18next";
 import { Download, RefreshCcw, ListPlus, Maximize2 } from "lucide-react";
 import type { ConfigNode } from "@/types/configuration";
 import { useConfigurationBuilder } from "@/hooks/use-configuration-builder";
+import { useInstrumentations } from "@/hooks/use-javaagent-data";
+import { collectVersionedDeclarativeNames } from "@/lib/configurations-aggregate";
+import { groupByModule } from "@/lib/normalize-instrumentation";
 import {
   generateYamlSections,
   structuredToString,
@@ -103,13 +106,26 @@ export function PreviewCard({
   const { t } = useTranslation("java-agent");
   const { state, enableAllSections, resetToDefaults, validateAll } = useConfigurationBuilder();
   const hasErrors = Object.keys(state.validationErrors).length > 0;
+  // Hide instrumentation/development.java.* values the selected agent version
+  // doesn't have. Filtering here instead of in state keeps them around for when
+  // the user switches back. Undefined while the inventory loads, which skips
+  // the filter rather than treating every option as unknown.
+  const { data: instrumentations } = useInstrumentations(javaAgentVersion);
+  const validJavaDevNames = useMemo(
+    () =>
+      instrumentations
+        ? new Set(collectVersionedDeclarativeNames(groupByModule(instrumentations)))
+        : undefined,
+    [instrumentations]
+  );
   const structured = useMemo(
     () =>
       generateYamlSections(state, schema, {
         javaAgentVersion: javaAgentVersion || undefined,
         target,
+        validJavaDevNames,
       }),
-    [state, schema, javaAgentVersion, target]
+    [state, schema, javaAgentVersion, target, validJavaDevNames]
   );
 
   const yaml = useMemo(() => structuredToString(structured), [structured]);

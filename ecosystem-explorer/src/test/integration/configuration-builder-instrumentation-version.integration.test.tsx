@@ -20,7 +20,7 @@ import { describe, it, expect, beforeAll, afterAll, beforeEach } from "vitest";
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { normalizeRegistryName } from "@/lib/normalize-instrumentation";
-import type { VersionsIndex } from "@/types/javaagent";
+import type { InstrumentationListEntry, VersionsIndex } from "@/types/javaagent";
 import { installFetchInterceptor, uninstallFetchInterceptor } from "./helpers/fetch-interceptor";
 import { renderBuilderPage as renderPage } from "./helpers/render-builder-page";
 import { openInstrumentationTab } from "./helpers/open-instrumentation-tab";
@@ -52,6 +52,38 @@ const moduleOnlyInLatest = (() => {
   const latest = moduleNamesFor(latestAgentVersion);
   const other = moduleNamesFor(otherAgentVersion);
   return [...latest].find((m) => !other.has(m));
+})();
+
+const oldestAgentVersion = javaAgentVersionsIndex.versions.at(-1)?.version;
+
+function loadBundle(version: string): InstrumentationListEntry[] {
+  const entry = javaAgentVersionsIndex.versions.find((v) => v.version === version)!;
+  return JSON.parse(
+    fs.readFileSync(
+      path.join(MANIFESTS_DIR, "..", "bundles", `${version}-${entry.bundle_hash}.json`),
+      "utf-8"
+    )
+  ) as InstrumentationListEntry[];
+}
+
+// Pick a string-typed java.* option present in the latest agent version but
+// absent in the oldest one, along with a module row that exposes it, so the
+// output-filter test does not depend on which versions ship.
+const javaOptionOnlyInLatest = (() => {
+  if (!oldestAgentVersion || oldestAgentVersion === latestAgentVersion) return undefined;
+  const oldNames = new Set(
+    loadBundle(oldestAgentVersion).flatMap((e) =>
+      (e.configurations ?? []).map((c) => c.declarative_name)
+    )
+  );
+  for (const entry of loadBundle(latestAgentVersion)) {
+    for (const cfg of entry.configurations ?? []) {
+      const name = cfg.declarative_name;
+      if (!name?.startsWith("java.") || cfg.type !== "string" || oldNames.has(name)) continue;
+      return { name, module: normalizeRegistryName(entry.name) };
+    }
+  }
+  return undefined;
 })();
 
 beforeAll(() => installFetchInterceptor());
@@ -175,6 +207,54 @@ describe("ConfigurationBuilderPage version selectors", () => {
         expect(preview.textContent).toContain(`Java agent: ${otherAgentVersion}`);
         expect(preview.textContent).not.toMatch(orphanLineRe);
         expect(preview.textContent).not.toMatch(/^distribution:/m);
+      },
+      { timeout: 10_000 }
+    );
+  });
+
+  it("hides java.* option values the selected Agent version lacks and restores them on switch back", async () => {
+    if (!oldestAgentVersion || !javaOptionOnlyInLatest) return;
+    const { name, module } = javaOptionOnlyInLatest;
+    const marker = "ecosystem_explorer_marker_value";
+    renderPage();
+    const user = userEvent.setup();
+    const agent = await findAgentSelector();
+
+    await openInstrumentationTab(user);
+    const row = (await screen.findByTestId(
+      `instrumentation-row-${module}`,
+      {},
+      { timeout: 10_000 }
+    )) as HTMLElement;
+    await user.click(within(row).getByRole("heading", { name: module }));
+
+    const field = within(row).getByTestId(`config-field-${name}`);
+    await user.click(within(field).getByRole("button", { name: /Customize/i }));
+    const input = within(field).getByRole("textbox", { name });
+    await user.clear(input);
+    await user.type(input, marker);
+
+    const preview = (await screen.findByLabelText(
+      "Output Preview",
+      {},
+      { timeout: 10_000 }
+    )) as HTMLElement;
+    await waitFor(() => expect(preview.textContent).toContain(marker));
+
+    await user.selectOptions(agent, oldestAgentVersion);
+    await waitFor(
+      () => {
+        expect(preview.textContent).toContain(`Java agent: ${oldestAgentVersion}`);
+        expect(preview.textContent).not.toContain(marker);
+      },
+      { timeout: 10_000 }
+    );
+
+    await user.selectOptions(agent, latestAgentVersion);
+    await waitFor(
+      () => {
+        expect(preview.textContent).toContain(`Java agent: ${latestAgentVersion}`);
+        expect(preview.textContent).toContain(marker);
       },
       { timeout: 10_000 }
     );

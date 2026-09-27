@@ -59,9 +59,9 @@ export function aggregateConfigurations(module: InstrumentationModule): Aggregat
 
 /**
  * Every non-general declarative name (owned and java.common.*) across the
- * given modules. This is the allowlist PRUNE_INSTRUMENTATIONS uses to drop
- * stale `instrumentation/development.java.*` values after an agent-version
- * switch: the schema types `java` as a bare key_value_map, so the per-version
+ * given modules. This is the allowlist filterJavaDevValues uses to hide
+ * `instrumentation/development.java.*` values the selected agent version
+ * doesn't have from the YAML output: the schema types `java` as a bare key_value_map, so the per-version
  * inventory is the only source of which names exist.
  *
  * general.* is excluded on purpose. Its validity comes from the (pinned)
@@ -70,7 +70,7 @@ export function aggregateConfigurations(module: InstrumentationModule): Aggregat
  *
  * Do not derive this from buildInstrumentationDefaultEntries: that skips
  * options with empty defaults, so a user-set value for such an option would be
- * missing from the allowlist and wrongly pruned.
+ * missing from the allowlist and wrongly hidden.
  */
 export function collectVersionedDeclarativeNames(modules: InstrumentationModule[]): string[] {
   const names = new Set<string>();

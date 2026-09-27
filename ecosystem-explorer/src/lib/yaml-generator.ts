@@ -21,6 +21,7 @@ import type {
   ConfigurationBuilderState,
 } from "@/types/configuration-builder";
 import { isPlainObject } from "./value-guards";
+import { filterJavaDevValues } from "./java-dev-values";
 
 const EMPTY = Symbol("EMPTY");
 type StrippedResult = ConfigValue | typeof EMPTY;
@@ -37,6 +38,13 @@ interface GenerateYamlOptions {
    * so the YAML can be pasted into a Spring Boot `application.yaml`.
    */
   target?: ConfigurationTarget;
+  /**
+   * Declarative names (owned and java.common.*) the selected agent version
+   * supports. When set, `instrumentation/development.java.*` values outside
+   * this set are left out of the output; builder state still keeps them.
+   * Leave undefined to skip the filter (e.g. while the inventory is loading).
+   */
+  validJavaDevNames?: ReadonlySet<string>;
 }
 
 function defaultHeader(
@@ -227,6 +235,9 @@ export function generateYamlSections(
   const target: ConfigurationTarget = options?.target ?? "javaagent";
   const isSpringStarter = target === "spring_starter";
   const header = options?.header ?? defaultHeader(state.version, options?.javaAgentVersion, target);
+  const values = options?.validJavaDevNames
+    ? filterJavaDevValues(state.values, options.validJavaDevNames)
+    : state.values;
 
   if (schema.controlType !== "group") {
     const fallbackContent = "# Schema is not a group; cannot generate sections.\n";
@@ -252,7 +263,7 @@ export function generateYamlSections(
   for (const child of others) {
     if (child.controlType === "group") {
       if (state.enabledSections[child.key] !== true) continue;
-      const raw = state.values[child.key];
+      const raw = values[child.key];
       let stripped: StrippedResult = raw === undefined ? EMPTY : stripEmpties(raw);
       // Unwrap the plugin_select short-circuit at the section-body root: a
       // single-entry object with null value at the top level represents an
@@ -273,7 +284,7 @@ export function generateYamlSections(
       sections.push({ key: child.key, content });
       continue;
     }
-    const raw = state.values[child.key];
+    const raw = values[child.key];
     if (raw === undefined) continue;
     const stripped = stripEmpties(raw);
     if (stripped === EMPTY) continue;
