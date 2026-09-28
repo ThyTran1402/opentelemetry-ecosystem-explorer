@@ -15,13 +15,15 @@
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { renderHook, waitFor } from "@testing-library/react";
-import { useLibraryReadme } from "./use-javaagent-data";
+import { useInstrumentations, useLibraryReadme } from "./use-javaagent-data";
 
 vi.mock("@/lib/api/javaagent-data", () => ({
   loadLibraryReadme: vi.fn(),
+  loadAllInstrumentations: vi.fn(),
 }));
 
 import * as javaagentData from "@/lib/api/javaagent-data";
+import type { InstrumentationListEntry } from "@/types/javaagent";
 
 beforeEach(() => {
   vi.resetAllMocks();
@@ -53,5 +55,62 @@ describe("useLibraryReadme", () => {
 
     expect(result.current.data).toBe("# Readme content");
     expect(result.current.error).toBeNull();
+  });
+});
+
+describe("useInstrumentations", () => {
+  const loadAll = () => javaagentData.loadAllInstrumentations as ReturnType<typeof vi.fn>;
+  const inventoryA = [{ name: "a" }] as unknown as InstrumentationListEntry[];
+  const inventoryB = [{ name: "b" }] as unknown as InstrumentationListEntry[];
+
+  it("should not return the previous version's data on the first render after a version change", async () => {
+    loadAll().mockImplementation((version: string) =>
+      version === "1.0.0" ? Promise.resolve(inventoryA) : new Promise(() => {})
+    );
+
+    const { result, rerender } = renderHook(({ version }) => useInstrumentations(version), {
+      initialProps: { version: "1.0.0" },
+    });
+
+    await waitFor(() => {
+      expect(result.current.data).toBe(inventoryA);
+    });
+
+    rerender({ version: "2.0.0" });
+
+    expect(result.current.data).toBeNull();
+    expect(result.current.loading).toBe(true);
+    expect(result.current.error).toBeNull();
+  });
+
+  it("should load the new version's data after a version change", async () => {
+    loadAll().mockImplementation((version: string) =>
+      Promise.resolve(version === "1.0.0" ? inventoryA : inventoryB)
+    );
+
+    const { result, rerender } = renderHook(({ version }) => useInstrumentations(version), {
+      initialProps: { version: "1.0.0" },
+    });
+
+    await waitFor(() => {
+      expect(result.current.data).toBe(inventoryA);
+    });
+
+    rerender({ version: "2.0.0" });
+
+    await waitFor(() => {
+      expect(result.current.data).toBe(inventoryB);
+    });
+    expect(result.current.loading).toBe(false);
+  });
+
+  it("should report not loading when no version is selected", async () => {
+    const { result } = renderHook(() => useInstrumentations(""));
+
+    await waitFor(() => {
+      expect(result.current.loading).toBe(false);
+    });
+    expect(result.current.data).toBeNull();
+    expect(loadAll()).not.toHaveBeenCalled();
   });
 });

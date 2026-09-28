@@ -60,7 +60,11 @@ export function useVersions(): DataState<VersionsIndex> {
 }
 
 export function useInstrumentations(version: string): DataState<InstrumentationListEntry[]> {
-  const [state, setState] = useState<DataState<InstrumentationListEntry[]>>({
+  // Tag results with the version that produced them. The effect only resets state
+  // after render, so without this the first render after a version change would
+  // return the previous version's inventory.
+  const [state, setState] = useState<DataState<InstrumentationListEntry[]> & { version: string }>({
+    version,
     data: null,
     loading: true,
     error: null,
@@ -71,20 +75,19 @@ export function useInstrumentations(version: string): DataState<InstrumentationL
 
     async function loadData() {
       if (!version) {
-        setState({ data: null, loading: false, error: null });
+        setState({ version, data: null, loading: false, error: null });
         return;
       }
-
-      setState({ data: null, loading: true, error: null });
 
       try {
         const data = await javaagentData.loadAllInstrumentations(version);
         if (!cancelled) {
-          setState({ data, loading: false, error: null });
+          setState({ version, data, loading: false, error: null });
         }
       } catch (error) {
         if (!cancelled) {
           setState({
+            version,
             data: null,
             loading: false,
             error: error instanceof Error ? error : new Error(String(error)),
@@ -100,7 +103,11 @@ export function useInstrumentations(version: string): DataState<InstrumentationL
     };
   }, [version]);
 
-  return state;
+  if (state.version !== version) {
+    return { data: null, loading: Boolean(version), error: null };
+  }
+  const { data, loading, error } = state;
+  return { data, loading, error };
 }
 
 export function useLibraryReadme(
