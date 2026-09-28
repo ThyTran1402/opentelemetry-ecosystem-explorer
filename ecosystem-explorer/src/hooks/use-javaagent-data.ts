@@ -59,6 +59,12 @@ export function useVersions(): DataState<VersionsIndex> {
   return state;
 }
 
+const INSTRUMENTATIONS_LOADING: DataState<InstrumentationListEntry[]> = {
+  data: null,
+  loading: true,
+  error: null,
+};
+
 export function useInstrumentations(version: string): DataState<InstrumentationListEntry[]> {
   // Tag results with the version that produced them. The effect only resets state
   // after render, so without this the first render after a version change would
@@ -103,11 +109,7 @@ export function useInstrumentations(version: string): DataState<InstrumentationL
     };
   }, [version]);
 
-  if (state.version !== version) {
-    return { data: null, loading: Boolean(version), error: null };
-  }
-  const { data, loading, error } = state;
-  return { data, loading, error };
+  return state.version === version ? state : INSTRUMENTATIONS_LOADING;
 }
 
 export function useLibraryReadme(

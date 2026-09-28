@@ -68,9 +68,17 @@ describe("useInstrumentations", () => {
       version === "1.0.0" ? Promise.resolve(inventoryA) : new Promise(() => {})
     );
 
-    const { result, rerender } = renderHook(({ version }) => useInstrumentations(version), {
-      initialProps: { version: "1.0.0" },
-    });
+    // Record every render: act() flushes the effect before result.current can be
+    // read, so asserting on result.current alone would miss the stale render.
+    const renders: Array<{ version: string; data: InstrumentationListEntry[] | null }> = [];
+    const { result, rerender } = renderHook(
+      ({ version }) => {
+        const state = useInstrumentations(version);
+        renders.push({ version, data: state.data });
+        return state;
+      },
+      { initialProps: { version: "1.0.0" } }
+    );
 
     await waitFor(() => {
       expect(result.current.data).toBe(inventoryA);
@@ -78,9 +86,10 @@ describe("useInstrumentations", () => {
 
     rerender({ version: "2.0.0" });
 
-    expect(result.current.data).toBeNull();
+    const rendersForB = renders.filter((r) => r.version === "2.0.0");
+    expect(rendersForB.length).toBeGreaterThan(0);
+    expect(rendersForB.every((r) => r.data === null)).toBe(true);
     expect(result.current.loading).toBe(true);
-    expect(result.current.error).toBeNull();
   });
 
   it("should load the new version's data after a version change", async () => {
