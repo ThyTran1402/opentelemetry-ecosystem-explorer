@@ -54,8 +54,3 @@ export function useCustomizationStatusMap(
     return map;
   }, [state.values, modules]);
 }
-
-export function useCustomizationStatus(module: string): CustomizationStatus {
-  const { state } = useConfigurationBuilder();
-  return toStatus(getByPath(state.values, [...PATH, module]));
-}

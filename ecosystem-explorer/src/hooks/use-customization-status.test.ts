@@ -17,7 +17,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { renderHook } from "@testing-library/react";
 import type { InstrumentationModule } from "@/types/javaagent";
 import { useConfigurationBuilder } from "./use-configuration-builder";
-import { useCustomizationStatus, useCustomizationStatusMap } from "./use-customization-status";
+import { useCustomizationStatusMap } from "./use-customization-status";
 
 vi.mock("./use-configuration-builder");
 
@@ -84,28 +84,6 @@ describe("useCustomizationStatusMap", () => {
     const modules = modulesNamed("jmx_metrics");
     const { result } = renderHook(() => useCustomizationStatusMap(modules));
     expect([...result.current]).toEqual([["jmx_metrics", "enabled"]]);
-  });
-});
-
-describe("useCustomizationStatus", () => {
-  beforeEach(() => mocked.mockReset());
-
-  it("returns 'none' for an unknown module", () => {
-    mocked.mockReturnValue(fakeBuilderState());
-    const { result } = renderHook(() => useCustomizationStatus("cassandra"));
-    expect(result.current).toBe("none");
-  });
-
-  it("returns 'enabled' / 'disabled' as appropriate", () => {
-    mocked.mockReturnValue(
-      fakeBuilderState({
-        jmx_metrics: { enabled: true },
-        cassandra: { enabled: false },
-      })
-    );
-    expect(renderHook(() => useCustomizationStatus("cassandra")).result.current).toBe("disabled");
-    expect(renderHook(() => useCustomizationStatus("jmx_metrics")).result.current).toBe("enabled");
-    expect(renderHook(() => useCustomizationStatus("foo")).result.current).toBe("none");
   });
 });
 
