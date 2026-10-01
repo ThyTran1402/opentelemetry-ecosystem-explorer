@@ -579,6 +579,14 @@ class TestMain:
 
 
 class TestRunBuilderOrchestrator:
+    @pytest.fixture(autouse=True)
+    def mock_javascript(self):
+        # Most tests here only patch the first three pipelines. Without this,
+        # ecosystem="all" would run the real JS builder against the repo registry
+        # and write into ecosystem-explorer/public/data/javascript.
+        with patch("explorer_db_builder.main.run_javascript_builder", return_value=0) as mock:
+            yield mock
+
     @patch("explorer_db_builder.main.run_collector_builder")
     @patch("explorer_db_builder.main.run_configuration_builder")
     @patch("explorer_db_builder.main.run_javaagent_builder")
@@ -695,3 +703,59 @@ class TestRunBuilderOrchestrator:
         run_builder(clean=False, ecosystem="collector", collector_audit_report="audit/report.json")
 
         mock_collector.assert_called_once_with(clean=False, audit_report_path="audit/report.json")
+
+    @patch("explorer_db_builder.main.run_collector_builder", return_value=0)
+    @patch("explorer_db_builder.main.run_configuration_builder", return_value=0)
+    @patch("explorer_db_builder.main.run_javaagent_builder", return_value=0)
+    def test_all_runs_javascript(self, mock_java, mock_config, mock_collector, mock_javascript):
+        result = run_builder(clean=True)
+
+        assert result == 0
+        mock_javascript.assert_called_once_with(clean=True)
+
+    @patch("explorer_db_builder.main.run_collector_builder", return_value=0)
+    @patch("explorer_db_builder.main.run_configuration_builder", return_value=0)
+    @patch("explorer_db_builder.main.run_javaagent_builder", return_value=0)
+    def test_ecosystem_javascript_only(self, mock_java, mock_config, mock_collector, mock_javascript):
+        result = run_builder(clean=False, ecosystem="javascript")
+
+        assert result == 0
+        mock_javascript.assert_called_once_with(clean=False)
+        mock_java.assert_not_called()
+        mock_config.assert_not_called()
+        mock_collector.assert_not_called()
+
+    @patch("explorer_db_builder.main.run_collector_builder", return_value=0)
+    @patch("explorer_db_builder.main.run_configuration_builder", return_value=0)
+    @patch("explorer_db_builder.main.run_javaagent_builder", return_value=0)
+    def test_javascript_skipped_for_other_ecosystem(self, mock_java, mock_config, mock_collector, mock_javascript):
+        run_builder(clean=False, ecosystem="collector")
+
+        mock_javascript.assert_not_called()
+
+    @patch("explorer_db_builder.main.run_collector_builder", return_value=0)
+    @patch("explorer_db_builder.main.run_configuration_builder", return_value=0)
+    @patch("explorer_db_builder.main.run_javaagent_builder", return_value=0)
+    def test_javascript_failure_fails_build(self, mock_java, mock_config, mock_collector, mock_javascript):
+        mock_javascript.return_value = 1
+
+        result = run_builder(clean=False)
+
+        assert result == 1
+        mock_java.assert_called_once()
+        mock_config.assert_called_once()
+        mock_collector.assert_called_once()
+
+
+@patch("explorer_db_builder.main.run_builder", return_value=0)
+@patch("explorer_db_builder.main.sys.exit")
+def test_cli_accepts_javascript_ecosystem(mock_exit, mock_run_builder, monkeypatch):
+    # Parses real argv, so a missing "javascript" choice fails here.
+    from explorer_db_builder.main import main
+
+    monkeypatch.setattr("sys.argv", ["explorer-db-builder", "--ecosystem", "javascript"])
+
+    main()
+
+    mock_run_builder.assert_called_once_with(clean=False, ecosystem="javascript", collector_audit_report=None)
+    mock_exit.assert_called_once_with(0)

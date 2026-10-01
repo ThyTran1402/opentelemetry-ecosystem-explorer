@@ -224,6 +224,24 @@ class ParserV06(ParserV05):
         return 0.6
 
 
+class ParserV08(ParserV06):
+    """Parser for file_format 0.8.
+
+    Changes from 0.6 (0.7 never shipped in a release, so its changes are included):
+    - Events are hoisted into ``definitions.events`` and referenced by id via
+      ``event_refs`` inside ``telemetry`` entries (0.7).
+    - Configuration definitions may carry ``deprecated`` and ``replaced_by``, and
+      ``default`` is omitted when an unset value falls back to another setting (0.8).
+    - A top-level ``global_configuration_refs`` lists the configurations read by the
+      agent itself rather than by a specific instrumentation (0.8).
+
+    Like 0.6, the catalog-and-refs shape is preserved verbatim in the registry.
+    """
+
+    def get_file_format(self) -> float:
+        return 0.8
+
+
 class ParserFactory:
     """Factory for creating version-specific parsers."""
 
@@ -233,6 +251,7 @@ class ParserFactory:
         0.3: ParserV03,
         0.5: ParserV05,
         0.6: ParserV06,
+        0.8: ParserV08,
     }
 
     @classmethod

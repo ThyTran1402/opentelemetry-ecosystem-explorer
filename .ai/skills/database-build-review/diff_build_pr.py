@@ -27,8 +27,9 @@ truth for which blob each version uses), and reports:
 * orphaned blobs: content files present on the head tree but no longer referenced by any manifest
   (expected leftovers of incremental add-only writes, but a *referenced* blob going missing is a bug)
 
-Only the content-addressed ecosystems (``javaagent``, ``collector``) are supported; ``configuration``
-is a schema tree, not per-component content-addressed -- review its diff directly.
+Only the content-addressed ecosystems (``javaagent``, ``collector``, ``javascript``) are supported;
+``configuration`` is a schema tree, not per-component content-addressed -- review its diff directly.
+javascript has one manifest per package release, so its "versions" are ``<package>-<version>``.
 
 Examples:
     python diff_build_pr.py --repo-root . --ecosystem javaagent --pr 889
@@ -57,6 +58,9 @@ UPSTREAM_SLUG = "open-telemetry/opentelemetry-ecosystem-explorer"
 ECOSYSTEMS = {
     "javaagent": {"map_keys": ["instrumentations", "custom_instrumentations"], "content_subdir": "instrumentations"},
     "collector": {"map_keys": ["components"], "content_subdir": "components"},
+    # Packages version independently, so many manifests share a "version" value. Key each one by
+    # its filename (<package>-<version>) instead, or same-version packages overwrite each other.
+    "javascript": {"map_keys": ["packages"], "content_subdir": "packages", "key_by_filename": True},
 }
 
 
@@ -125,13 +129,15 @@ def _bare_component(component: str) -> str:
 def load_manifests(root: str, ref: str, ecosystem: str) -> dict[str, dict[str, str]]:
     """Return {version: {section-namespaced component: hash}} for every manifest at ``ref``."""
     map_keys = ECOSYSTEMS[ecosystem]["map_keys"]
+    key_by_filename = ECOSYSTEMS[ecosystem].get("key_by_filename", False)
     manifests: dict[str, dict[str, str]] = {}
     for path in list_manifest_paths(root, ref, ecosystem):
         raw = git_show(root, ref, path)
         if raw is None:
             continue
         data = json.loads(raw)
-        version = data.get("version") or path.rsplit("/", 1)[-1].removesuffix("-index.json")
+        stem = path.rsplit("/", 1)[-1].removesuffix("-index.json")
+        version = stem if key_by_filename else (data.get("version") or stem)
         combined: dict[str, str] = {}
         for key in map_keys:
             for name, digest in (data.get(key) or {}).items():

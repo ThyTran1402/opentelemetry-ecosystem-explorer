@@ -71,7 +71,7 @@ def write_missing_display_name_report(path: str, version: str, missing: list[dic
 
     Args:
         path: Destination file path (a build artifact location, not the database dir).
-        version: The collector release version the report reflects (latest processed).
+        version: The collector release version the report reflects (active catalog).
         missing: Output of find_missing_display_names.
     """
     report = {

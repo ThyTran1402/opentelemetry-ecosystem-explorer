@@ -23,6 +23,7 @@ on:
           - "javaagent"
           - "configuration"
           - "collector"
+          - "javascript"
         default: "all"
 
 permissions:
@@ -158,7 +159,7 @@ jobs:
           if [ "$COUNT" -eq 0 ]; then
             if [ -n "$EXISTING" ]; then
               gh issue close "$EXISTING" \
-                --comment "All collector components in \`v${VERSION}\` now have a \`display_name\`. Closing."
+                --comment "All collector components in \`${VERSION}\` now have a \`display_name\`. Closing."
               echo "Closed tracking issue #$EXISTING (no components missing display_name)."
             else
               echo "No components missing display_name and no open issue; nothing to do."
@@ -170,7 +171,7 @@ jobs:
           {
             jq -r '
               . as $r
-              | "The following components in the latest collector release (`v\($r.version)`) are missing a `display_name` in their upstream `metadata.yaml`. Fixing them upstream (opentelemetry-collector / opentelemetry-collector-contrib) lets them render with a friendly name in the Ecosystem Explorer.\n\n**Total missing: \($r.missing | length)**\n"
+              | "The following components in the active collector catalog (`\($r.version)`) are missing a `display_name` in their upstream `metadata.yaml`. Fixing them upstream (opentelemetry-collector / opentelemetry-collector-contrib) lets them render with a friendly name in the Ecosystem Explorer.\n\n**Total missing: \($r.missing | length)**\n"
                 + ( $r.missing
                     | group_by(.distribution)
                     | map(

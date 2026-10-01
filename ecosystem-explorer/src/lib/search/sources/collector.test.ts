@@ -14,10 +14,16 @@
  * limitations under the License.
  */
 
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
+import { loadIndex, loadVersions } from "@/lib/api/collector-data";
 import type { IndexComponent } from "@/types/collector";
-import { toCollectorResult } from "./collector";
+import { collectorSearchSource, toCollectorResult } from "./collector";
+
+vi.mock("@/lib/api/collector-data", () => ({
+  loadIndex: vi.fn(),
+  loadVersions: vi.fn(),
+}));
 
 function makeComponent(overrides: Partial<IndexComponent> = {}): IndexComponent {
   return {
@@ -61,5 +67,44 @@ describe("toCollectorResult", () => {
     );
 
     expect(result.title).toBe("zipkin");
+  });
+});
+
+describe("collectorSearchSource", () => {
+  it("resolves per-distribution latest versions when distributions are out of sync", async () => {
+    vi.mocked(loadVersions).mockResolvedValue({
+      versions: [
+        { version: "0.161.0", is_latest: true, distributions: ["core"] },
+        { version: "0.160.0", is_latest: false, distributions: ["core", "contrib"] },
+      ],
+      distributions: {
+        core: { latest: "0.161.0" },
+        contrib: { latest: "0.160.0" },
+      },
+    });
+    vi.mocked(loadIndex).mockResolvedValue({
+      ecosystem: "collector",
+      taxonomy: { distributions: ["core", "contrib"], types: ["receiver"] },
+      components: [
+        makeComponent({ distribution: "core", name: "otlp", id: "core-receiver-otlp" }),
+        makeComponent({
+          distribution: "contrib",
+          name: "kafka",
+          id: "contrib-receiver-kafka",
+          display_name: "Kafka Receiver",
+        }),
+      ],
+    });
+
+    const results = await collectorSearchSource.load();
+    expect(results).toHaveLength(2);
+    expect(results.find((r) => r.title === "OTLP Receiver")?.version).toBe("0.161.0");
+    expect(results.find((r) => r.title === "OTLP Receiver")?.path).toBe(
+      "/collector/components/core/otlp?version=0.161.0"
+    );
+    expect(results.find((r) => r.title === "Kafka Receiver")?.version).toBe("0.160.0");
+    expect(results.find((r) => r.title === "Kafka Receiver")?.path).toBe(
+      "/collector/components/contrib/kafka?version=0.160.0"
+    );
   });
 });

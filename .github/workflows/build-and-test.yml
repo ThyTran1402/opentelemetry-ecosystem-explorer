@@ -369,7 +369,9 @@ jobs:
         run: bun install --frozen-lockfile
 
       - name: Remove the generated database
-        run: rm -rf public/data/javaagent public/data/collector public/data/configuration
+        run:
+          rm -rf public/data/javaagent public/data/collector public/data/configuration
+          public/data/javascript
 
       - name: Typecheck
         run: bun run typecheck

@@ -52,7 +52,10 @@ async function loadCollectorSearchResults(): Promise<SearchResult[]> {
   const latestVersion = versionsIndex.versions.find((version) => version.is_latest)?.version;
   if (!latestVersion) return [];
 
-  return index.components.map((component) => toCollectorResult(component, latestVersion));
+  return index.components.map((component) => {
+    const version = versionsIndex.distributions?.[component.distribution]?.latest ?? latestVersion;
+    return toCollectorResult(component, version);
+  });
 }
 
 export const collectorSearchSource: SearchSource = {

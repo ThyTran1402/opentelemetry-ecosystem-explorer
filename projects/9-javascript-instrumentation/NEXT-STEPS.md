@@ -4,7 +4,7 @@ issue: 9
 type: roadmap
 phase: meta
 status: in-progress
-last_updated: "2026-05-17"
+last_updated: "2026-10-01"
 ---
 
 ## Done
@@ -14,12 +14,18 @@ last_updated: "2026-05-17"
 - [x] Produced 3 example registry entries (express, mongoose, aws-sdk)
 - [x] Audited telemetry coverage across all READMEs
 - [x] Documented heading inconsistencies across the 8 packages with structured telemetry data
+- [x] Deeper pass on the 8 packages with structured telemetry: not reliably parseable today, so
+      telemetry is a non-goal for now (see #990)
+- [x] JS instrumentation watcher running nightly into `ecosystem-registry/javascript/` (#577)
+- [x] Watcher orchestration test coverage (#1049, #1066)
+- [x] `explorer-db-builder` `javascript` pipeline, wired into the nightly build (#1202)
 
 ## In progress
 
-- [ ] Deeper pass on the 8 packages with structured telemetry, can their data be parsed reliably
-      despite heading differences?
-- [ ] Draft Phase 1 watcher architecture
+Tracked in [#990](https://github.com/open-telemetry/opentelemetry-ecosystem-explorer/issues/990):
+
+- [ ] Frontend list and detail pages for JS packages
+- [ ] Package README extraction into content-addressed storage, rendered on the detail page
 
 ## Open questions
 

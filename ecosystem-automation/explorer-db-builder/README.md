@@ -4,11 +4,11 @@ Automation tool for converting registry data into a content addressed database.
 
 ## Methodology
 
-On a nightly basis, the tool regenerates data based on the latest registry entries. It runs three
-pipelines — `javaagent`, `configuration`, and `collector` — each writing into its own directory
-under `ecosystem-explorer/public/data/`.
+On a nightly basis, the tool regenerates data based on the latest registry entries. It runs four
+pipelines — `javaagent`, `configuration`, `collector`, and `javascript` — each writing into its own
+directory under `ecosystem-explorer/public/data/`.
 
-Those three directories are owned **entirely** by this tool. A `--clean` build `rmtree`s each one
+Those four directories are owned **entirely** by this tool. A `--clean` build `rmtree`s each one
 before rebuilding, so any hand-maintained file placed inside them is deleted without warning — this
 is what silently removed the curated `javaagent/announcements.json` in #882. Curated content that
 the frontend fetches must live in a sibling directory the builder never writes to. Today those are
@@ -48,7 +48,19 @@ ecosystem-explorer/
           core-otlpreceiver/
             core-otlpreceiver-<hash>.json
           ...
+      javascript/
+        index.json                  # Every package at its latest version, with its version list
+        versions/                    # One manifest per package release: {package: content-hash}
+          instrumentation-express-0.70.0-index.json
+          ...
+        packages/                    # Content-addressed data for each package release
+          instrumentation-express/
+            instrumentation-express-<hash>.json
+          ...
 ```
+
+js-contrib packages version independently, so `javascript/` has no `versions-index.json`. Each
+package release is its own manifest instead, which keeps the shared orphan GC unchanged.
 
 ## Usage
 
@@ -65,8 +77,9 @@ uv run explorer-db-builder --clean
 uv run explorer-db-builder --ecosystem collector
 ```
 
-`--ecosystem` accepts `javaagent`, `configuration`, `collector`, or `all` (the default). Nightly CI
-passes this flag to rebuild a single ecosystem when only its registry data changed.
+`--ecosystem` accepts `javaagent`, `configuration`, `collector`, `javascript`, or `all` (the
+default). Nightly CI passes this flag to rebuild a single ecosystem when only its registry data
+changed.
 
 ## Development
 

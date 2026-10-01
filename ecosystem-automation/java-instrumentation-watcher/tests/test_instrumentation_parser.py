@@ -23,6 +23,7 @@ from java_instrumentation_watcher.instrumentation_parser import (
     ParserV03,
     ParserV05,
     ParserV06,
+    ParserV08,
     parse_instrumentation_yaml,
 )
 
@@ -317,6 +318,79 @@ libraries:
         assert "metrics" not in lib["telemetry"][0]
 
 
+class TestParserV08:
+    def test_get_file_format(self):
+        parser = ParserV08()
+        assert parser.get_file_format() == 0.8
+
+    def test_parse_preserves_new_fields(self):
+        # 0.7 and 0.8 add an events catalog, deprecation markers, optional defaults and a
+        # top-level list of agent-wide configs. All of it is kept as-is, refs unresolved.
+        yaml_content = """
+file_format: 0.8
+definitions:
+  configurations:
+    common.db.query-sanitization.enabled:
+      name: otel.instrumentation.common.db.query-sanitization.enabled
+      declarative_name: java.common.db.query_sanitization.enabled
+      description: Enables query sanitization for database queries.
+      type: boolean
+      default: true
+    otel.instrumentation.jdbc.query-sanitization.enabled:
+      name: otel.instrumentation.jdbc.query-sanitization.enabled
+      declarative_name: java.jdbc.query_sanitization.enabled
+      description: '  Overrides the common setting; when unset, that setting applies.  '
+      type: boolean
+    otel.instrumentation.jdbc.statement-sanitizer.enabled:
+      name: otel.instrumentation.jdbc.statement-sanitizer.enabled
+      description: 'Deprecated: use `otel.instrumentation.jdbc.query-sanitization.enabled` instead.'
+      type: boolean
+      deprecated: true
+      replaced_by: otel.instrumentation.jdbc.query-sanitization.enabled
+    span-suppression-strategy:
+      name: otel.instrumentation.common.span-suppression-strategy
+      declarative_name: java.common.span_suppression_strategy
+      description: Span suppression strategy.
+      type: string
+      default: semconv
+  events:
+    db.client.operation.exception-83d4cffb:
+      name: db.client.operation.exception
+      severity: WARN
+      attributes:
+      - name: exception.type
+        type: STRING
+global_configuration_refs:
+- span-suppression-strategy
+libraries:
+- name: jdbc
+  configuration_refs:
+  - common.db.query-sanitization.enabled
+  - otel.instrumentation.jdbc.query-sanitization.enabled
+  - otel.instrumentation.jdbc.statement-sanitizer.enabled
+  telemetry:
+  - when: otel.semconv.exception.signal.preview=logs
+    event_refs:
+    - db.client.operation.exception-83d4cffb
+"""
+        parser = ParserV08()
+        data = parser.parse(yaml_content)
+
+        assert data["file_format"] == 0.8
+        configs = data["definitions"]["configurations"]
+        override = configs["otel.instrumentation.jdbc.query-sanitization.enabled"]
+        assert "default" not in override
+        assert override["description"] == "Overrides the common setting; when unset, that setting applies."
+        deprecated = configs["otel.instrumentation.jdbc.statement-sanitizer.enabled"]
+        assert deprecated["deprecated"] is True
+        assert deprecated["replaced_by"] == "otel.instrumentation.jdbc.query-sanitization.enabled"
+        assert data["definitions"]["events"]["db.client.operation.exception-83d4cffb"]["severity"] == "WARN"
+        assert data["global_configuration_refs"] == ["span-suppression-strategy"]
+        telemetry = data["libraries"][0]["telemetry"][0]
+        assert telemetry["event_refs"] == ["db.client.operation.exception-83d4cffb"]
+        assert "events" not in telemetry
+
+
 class TestParserFactory:
     def test_get_parser_v0_1(self):
         parser = ParserFactory.get_parser(0.1)
@@ -342,11 +416,16 @@ class TestParserFactory:
         assert isinstance(parser, ParserV06)
         assert parser.get_file_format() == 0.6
 
+    def test_get_parser_v0_8(self):
+        parser = ParserFactory.get_parser(0.8)
+        assert isinstance(parser, ParserV08)
+        assert parser.get_file_format() == 0.8
+
     def test_get_default_parser(self):
         parser = ParserFactory.get_default_parser()
         assert isinstance(parser, InstrumentationParser)
         # Should return the latest version
-        assert parser.get_file_format() == 0.6
+        assert parser.get_file_format() == 0.8
 
 
 class TestParseInstrumentationYaml:

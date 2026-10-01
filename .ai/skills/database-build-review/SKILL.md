@@ -24,7 +24,7 @@ or a bug/regression (not fine). Most of the work here is telling those apart.
 
 Read this first — the review only makes sense against these mechanics.
 
-- **Three pipelines**: `javaagent`, `configuration`, `collector`. `--ecosystem` selects one (default
+- **Four pipelines**: `javaagent`, `configuration`, `collector`, `javascript`. `--ecosystem` selects one (default
   `all`). Each writes its own subtree under `ecosystem-explorer/public/data/`.
 - **Content addressing.** Each component version is written to `<name>-<hash>.json` where `hash` is
   a 12-char SHA-256 over the component's key-sorted, whitespace-normalized JSON
@@ -36,6 +36,9 @@ Read this first — the review only makes sense against these mechanics.
   you exactly which (component, version) pairs changed, without reading blobs.
   - javaagent keys: `instrumentations`, `custom_instrumentations`; blobs in `instrumentations/<name>/`.
   - collector key: `components`; blobs in `components/<name>/`.
+  - javascript has no ecosystem-wide version. Each package release gets its own manifest,
+    `versions/<package>-<v>-index.json`, key `packages` (one entry); blobs in `packages/<name>/`.
+    `diff_build_pr.py` reports its "versions" as `<package>-<v>`.
   - configuration is a schema tree (`versions/<v>.json`), **not** per-component
     content-addressed — the hash-churn analysis below doesn't apply to it; review it by reading the
     schema diff directly. Its starter templates are curated, not generated, and live outside the
