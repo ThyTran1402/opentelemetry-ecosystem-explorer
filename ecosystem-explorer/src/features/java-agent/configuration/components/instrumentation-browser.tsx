@@ -55,12 +55,12 @@ export function InstrumentationBrowser({
 }: InstrumentationBrowserProps): JSX.Element {
   const { setCustomization, mergeDefaults } = useConfigurationBuilder();
   const { t } = useTranslation("java-agent");
-  const customizationMap = useCustomizationStatusMap();
 
   const modules = useMemo<InstrumentationModule[]>(
     () => (instrumentations ? groupByModule(instrumentations) : []),
     [instrumentations]
   );
+  const customizationMap = useCustomizationStatusMap(modules);
 
   // Built from the full module list (all modules, not the active filter) so
   // "Add all configs" always adds every instrumentation config option.

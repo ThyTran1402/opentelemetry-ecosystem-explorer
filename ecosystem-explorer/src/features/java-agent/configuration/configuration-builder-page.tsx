@@ -75,19 +75,6 @@ const BUILDER_GRID = "grid grid-cols-1 gap-6 lg:grid-cols-[256px_minmax(0,1fr)_4
 const GENERAL_SUBKEY = "general";
 const INSTRUMENTATIONS_SECTION_KEY = "instrumentations";
 
-// Drops instrumentation customizations that reference modules not present in the
-// selected agent version. Without this, switching from a newer agent (where a
-// module exists) to an older one would leak orphan entries into the YAML output.
-function PruneInstrumentationsForAgentVersion({ javaAgentVersion }: { javaAgentVersion: string }) {
-  const { pruneInstrumentations } = useConfigurationBuilder();
-  const { data } = useInstrumentations(javaAgentVersion);
-  useEffect(() => {
-    if (!data) return;
-    pruneInstrumentations(groupByModule(data).map((m) => m.name));
-  }, [data, pruneInstrumentations]);
-  return null;
-}
-
 const EXPAND_TOOLBAR_BUTTON =
   "border-border/60 bg-card text-foreground hover:bg-card/80 focus-visible:ring-primary inline-flex cursor-pointer items-center gap-1 rounded-md border px-3 py-1.5 text-xs focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none";
 
@@ -151,7 +138,6 @@ function SdkTabContent({ schema, javaAgentVersion, activeTab, target }: SdkTabCo
 
   return (
     <>
-      <PruneInstrumentationsForAgentVersion javaAgentVersion={javaAgentVersion} />
       <SectionExpansionProvider>
         <div className={BUILDER_GRID}>
           <ConfigurationTocSidebar
@@ -271,7 +257,7 @@ function InstrumentationTabBody({
   const sectionsContainerRef = useRef<HTMLDivElement>(null);
   const { activeKey, scrollToSection } = useActiveSection(sectionKeys, sectionsContainerRef);
 
-  const { state, setEnabled, pruneInstrumentations } = useConfigurationBuilder();
+  const { state, setEnabled } = useConfigurationBuilder();
 
   const instrumentationsState = useInstrumentations(javaAgentVersion);
   const modules = useMemo(
@@ -280,11 +266,6 @@ function InstrumentationTabBody({
   );
   const customizedSet = useCustomizedModules(modules);
   const customizationCount = customizedSet.size;
-
-  useEffect(() => {
-    if (!instrumentationsState.data) return;
-    pruneInstrumentations(modules.map((m) => m.name));
-  }, [instrumentationsState.data, modules, pruneInstrumentations]);
 
   const devSection = state.values[INSTRUMENTATION_DEV_KEY];
   const hasDevContent = useMemo(() => hasMeaningfulLeaf(devSection), [devSection]);

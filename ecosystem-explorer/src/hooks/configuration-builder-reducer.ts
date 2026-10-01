@@ -33,8 +33,6 @@ export const INITIAL_STATE: ConfigurationBuilderState = {
   listItemIds: {},
 };
 
-const INSTRUMENTATION_PATH = ["distribution", "javaagent", "instrumentation"];
-
 function cleanInstrumentation(values: ConfigValues): ConfigValues {
   if (!values.distribution || typeof values.distribution !== "object") return values;
   const dist = { ...values.distribution } as ConfigValues;
@@ -239,29 +237,6 @@ export function configurationBuilderReducer(
       }
       if (!changed) return state;
       return { ...state, values, isDirty: true };
-    }
-
-    case "PRUNE_INSTRUMENTATIONS": {
-      const current = getByPath(state.values, INSTRUMENTATION_PATH);
-      if (!isPlainObject(current)) return state;
-
-      const valid = new Set(action.validModules);
-      let changed = false;
-      const nextInst: ConfigValues = { ...current };
-
-      for (const key of Object.keys(nextInst)) {
-        if (!valid.has(key)) {
-          delete nextInst[key];
-          changed = true;
-        }
-      }
-
-      if (!changed) return state;
-
-      return {
-        ...state,
-        values: cleanInstrumentation(setByPath(state.values, INSTRUMENTATION_PATH, nextInst)),
-      };
     }
 
     default:

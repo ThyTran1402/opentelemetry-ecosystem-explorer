@@ -106,26 +106,28 @@ export function PreviewCard({
   const { t } = useTranslation("java-agent");
   const { state, enableAllSections, resetToDefaults, validateAll } = useConfigurationBuilder();
   const hasErrors = Object.keys(state.validationErrors).length > 0;
-  // Hide instrumentation/development.java.* values the selected agent version
-  // doesn't have. Filtering here instead of in state keeps them around for when
-  // the user switches back. Undefined while the inventory loads, which skips
-  // the filter rather than treating every option as unknown.
+  // Hide instrumentation/development.java.* values and module enable/disable
+  // flags the selected agent version doesn't have. Filtering here instead of in
+  // state keeps them around for when the user switches back. Undefined while
+  // the inventory loads, which skips the filters rather than treating
+  // everything as unknown.
   const { data: instrumentations } = useInstrumentations(javaAgentVersion);
-  const validJavaDevNames = useMemo(
-    () =>
-      instrumentations
-        ? new Set(collectVersionedDeclarativeNames(groupByModule(instrumentations)))
-        : undefined,
-    [instrumentations]
-  );
+  const versionFilters = useMemo(() => {
+    if (!instrumentations) return undefined;
+    const modules = groupByModule(instrumentations);
+    return {
+      validJavaDevNames: new Set(collectVersionedDeclarativeNames(modules)),
+      validJavaagentModules: new Set(modules.map((m) => m.name)),
+    };
+  }, [instrumentations]);
   const structured = useMemo(
     () =>
       generateYamlSections(state, schema, {
         javaAgentVersion: javaAgentVersion || undefined,
         target,
-        validJavaDevNames,
+        ...versionFilters,
       }),
-    [state, schema, javaAgentVersion, target, validJavaDevNames]
+    [state, schema, javaAgentVersion, target, versionFilters]
   );
 
   const yaml = useMemo(() => structuredToString(structured), [structured]);

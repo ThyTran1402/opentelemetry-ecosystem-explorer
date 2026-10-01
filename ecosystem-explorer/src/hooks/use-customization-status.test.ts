@@ -15,12 +15,19 @@
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { renderHook } from "@testing-library/react";
+import type { InstrumentationModule } from "@/types/javaagent";
 import { useConfigurationBuilder } from "./use-configuration-builder";
 import { useCustomizationStatus, useCustomizationStatusMap } from "./use-customization-status";
 
 vi.mock("./use-configuration-builder");
 
 const mocked = vi.mocked(useConfigurationBuilder);
+
+function modulesNamed(...names: string[]): InstrumentationModule[] {
+  return names.map((name) => ({ name, defaultDisabled: false, coveredEntries: [] }));
+}
+
+const ALL_MODULES = modulesNamed("jmx_metrics", "cassandra", "kafka_clients");
 
 function fakeBuilderState(
   modules: Record<string, { enabled?: boolean }> = {}
@@ -48,7 +55,7 @@ describe("useCustomizationStatusMap", () => {
 
   it("returns an empty map when there are no customizations", () => {
     mocked.mockReturnValue(fakeBuilderState());
-    const { result } = renderHook(() => useCustomizationStatusMap());
+    const { result } = renderHook(() => useCustomizationStatusMap(ALL_MODULES));
     expect(result.current.size).toBe(0);
   });
 
@@ -60,11 +67,23 @@ describe("useCustomizationStatusMap", () => {
         kafka_clients: { enabled: false },
       })
     );
-    const { result } = renderHook(() => useCustomizationStatusMap());
+    const { result } = renderHook(() => useCustomizationStatusMap(ALL_MODULES));
     expect(result.current.get("cassandra")).toBe("disabled");
     expect(result.current.get("jmx_metrics")).toBe("enabled");
     expect(result.current.get("kafka_clients")).toBe("disabled");
     expect(result.current.size).toBe(3);
+  });
+
+  it("leaves out modules absent from the selected agent version", () => {
+    mocked.mockReturnValue(
+      fakeBuilderState({
+        jmx_metrics: { enabled: true },
+        jaxws_cxf: { enabled: false },
+      })
+    );
+    const modules = modulesNamed("jmx_metrics");
+    const { result } = renderHook(() => useCustomizationStatusMap(modules));
+    expect([...result.current]).toEqual([["jmx_metrics", "enabled"]]);
   });
 });
 
@@ -100,7 +119,7 @@ describe("useCustomizationStatusMap memoization", () => {
         cassandra: { enabled: false },
       })
     );
-    const { result, rerender } = renderHook(() => useCustomizationStatusMap());
+    const { result, rerender } = renderHook(() => useCustomizationStatusMap(ALL_MODULES));
     const first = result.current;
     rerender();
     expect(result.current).toBe(first);
