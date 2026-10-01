@@ -14,6 +14,7 @@
  * limitations under the License.
  */
 import { useMemo } from "react";
+import type { InstrumentationModule } from "@/types/javaagent";
 import { getByPath } from "@/lib/config-path";
 import { useConfigurationBuilder } from "./use-configuration-builder";
 
@@ -21,26 +22,40 @@ export type CustomizationStatus = "enabled" | "disabled" | "none";
 
 const PATH = ["distribution", "javaagent", "instrumentation"] as const;
 
-export function useCustomizationStatusMap(): Map<string, "enabled" | "disabled"> {
+function toStatus(moduleConfig: unknown): CustomizationStatus {
+  if (!moduleConfig || typeof moduleConfig !== "object" || Array.isArray(moduleConfig)) {
+    return "none";
+  }
+  const enabled = (moduleConfig as Record<string, unknown>).enabled;
+  if (enabled === true) return "enabled";
+  if (enabled === false) return "disabled";
+  return "none";
+}
+
+/**
+ * Status of each module in `modules` that has an enable/disable flag. Flags for
+ * modules outside `modules` (e.g. absent from the selected agent version) stay
+ * in builder state but are left out here.
+ */
+export function useCustomizationStatusMap(
+  modules: readonly InstrumentationModule[]
+): Map<string, "enabled" | "disabled"> {
   const { state } = useConfigurationBuilder();
   return useMemo(() => {
     const inst = getByPath(state.values, [...PATH]);
     const map = new Map<string, "enabled" | "disabled">();
     if (!inst || typeof inst !== "object" || Array.isArray(inst)) return map;
+    const known = new Set(modules.map((m) => m.name));
     for (const [moduleName, moduleConfig] of Object.entries(inst)) {
-      if (moduleConfig && typeof moduleConfig === "object" && !Array.isArray(moduleConfig)) {
-        const enabled = (moduleConfig as Record<string, unknown>).enabled;
-        if (enabled === true) {
-          map.set(moduleName, "enabled");
-        } else if (enabled === false) {
-          map.set(moduleName, "disabled");
-        }
-      }
+      if (!known.has(moduleName)) continue;
+      const status = toStatus(moduleConfig);
+      if (status !== "none") map.set(moduleName, status);
     }
     return map;
-  }, [state.values]);
+  }, [state.values, modules]);
 }
 
 export function useCustomizationStatus(module: string): CustomizationStatus {
-  return useCustomizationStatusMap().get(module) ?? "none";
+  const { state } = useConfigurationBuilder();
+  return toStatus(getByPath(state.values, [...PATH, module]));
 }

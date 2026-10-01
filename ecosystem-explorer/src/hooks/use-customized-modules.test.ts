@@ -79,8 +79,21 @@ describe("useCustomizedModules", () => {
         },
       },
     };
-    const { result } = renderHook(() => useCustomizedModules([]));
+    const modules = ["tomcat", "spring_webmvc", "armeria_grpc"].map((n) => makeModule(n, []));
+    const { result } = renderHook(() => useCustomizedModules(modules));
     expect([...result.current].sort()).toEqual(["armeria_grpc", "spring_webmvc", "tomcat"]);
+  });
+
+  it("ignores flags for modules absent from the selected agent version", () => {
+    mockState.values = {
+      distribution: {
+        javaagent: {
+          instrumentation: { jaxws_cxf: { enabled: false }, tomcat: { enabled: true } },
+        },
+      },
+    };
+    const { result } = renderHook(() => useCustomizedModules([makeModule("tomcat", [])]));
+    expect([...result.current]).toEqual(["tomcat"]);
   });
 
   it("flags a module by its name when an owned-scope path has a meaningful leaf", () => {
@@ -148,7 +161,8 @@ describe("useCustomizedModules", () => {
         java: { cassandra: { query_sanitization: { enabled: false } } },
       },
     };
-    const { result } = renderHook(() => useCustomizedModules([cassandra]));
+    const tomcat = makeModule("tomcat", []);
+    const { result } = renderHook(() => useCustomizedModules([cassandra, tomcat]));
     expect([...result.current].sort()).toEqual(["cassandra", "tomcat"]);
   });
 

@@ -26,10 +26,14 @@ export function useCustomizedModules(modules: InstrumentationModule[]): Set<stri
   const { state } = useConfigurationBuilder();
   return useMemo(() => {
     const result = new Set<string>();
+    // Flags for modules absent from the selected agent version stay in state
+    // but must not count as customized.
+    const known = new Set(modules.map((m) => m.name));
 
     const enabledSection = getByPath(state.values, [...ENABLED_PATH]);
     if (enabledSection && typeof enabledSection === "object" && !Array.isArray(enabledSection)) {
       for (const [moduleName, moduleVal] of Object.entries(enabledSection)) {
+        if (!known.has(moduleName)) continue;
         if (moduleVal && typeof moduleVal === "object" && !Array.isArray(moduleVal)) {
           if (typeof (moduleVal as Record<string, unknown>).enabled === "boolean") {
             result.add(moduleName);

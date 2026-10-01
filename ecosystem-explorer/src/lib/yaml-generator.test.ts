@@ -773,6 +773,80 @@ describe("generateYaml", () => {
     });
   });
 
+  describe("validJavaagentModules", () => {
+    const moduleSchema: ConfigNode = {
+      controlType: "group",
+      key: "root",
+      label: "Root",
+      path: "",
+      children: [
+        {
+          controlType: "key_value_map",
+          key: "distribution",
+          label: "Distribution",
+          path: "distribution",
+        },
+      ],
+    };
+
+    const moduleState: ConfigurationBuilderState = {
+      version: "1.0.0",
+      values: {
+        distribution: {
+          javaagent: {
+            instrumentation: { jaxws_cxf: { enabled: false }, jdbc: { enabled: true } },
+          },
+        },
+      },
+      enabledSections: {},
+      validationErrors: {},
+      isDirty: false,
+    };
+
+    it("omits flags for modules outside the set and keeps the rest", () => {
+      const output = generateYaml(moduleState, moduleSchema, {
+        header: "",
+        validJavaagentModules: new Set(["jdbc"]),
+      });
+      expect(output).toContain("jdbc:");
+      expect(output).not.toContain("jaxws_cxf");
+    });
+
+    it("emits every flag when the set is undefined", () => {
+      const output = generateYaml(moduleState, moduleSchema, { header: "" });
+      expect(output).toContain("jdbc:");
+      expect(output).toContain("jaxws_cxf:");
+    });
+
+    it("omits the distribution section when every flagged module is unknown", () => {
+      const output = generateYaml(moduleState, moduleSchema, {
+        header: "",
+        validJavaagentModules: new Set(),
+      });
+      expect(output).not.toContain("distribution:");
+    });
+
+    it("filters before the spring_starter rename", () => {
+      const output = generateYaml(moduleState, moduleSchema, {
+        header: "",
+        target: "spring_starter",
+        validJavaagentModules: new Set(["jdbc"]),
+      });
+      expect(output).toMatch(/^ {4}spring_starter:$/m);
+      expect(output).toContain("jdbc:");
+      expect(output).not.toContain("jaxws_cxf");
+    });
+
+    it("does not mutate builder state", () => {
+      const snapshot = structuredClone(moduleState.values);
+      generateYaml(moduleState, moduleSchema, {
+        header: "",
+        validJavaagentModules: new Set(),
+      });
+      expect(moduleState.values).toEqual(snapshot);
+    });
+  });
+
   describe("generateYamlSections", () => {
     it("returns structured sections mapping to expected keys and content", () => {
       const state: ConfigurationBuilderState = {

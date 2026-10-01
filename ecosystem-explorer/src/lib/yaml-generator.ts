@@ -22,6 +22,7 @@ import type {
 } from "@/types/configuration-builder";
 import { isPlainObject } from "./value-guards";
 import { filterJavaDevValues } from "./java-dev-values";
+import { filterJavaagentModuleValues } from "./javaagent-module-values";
 
 const EMPTY = Symbol("EMPTY");
 type StrippedResult = ConfigValue | typeof EMPTY;
@@ -45,6 +46,13 @@ interface GenerateYamlOptions {
    * Leave undefined to skip the filter (e.g. while the inventory is loading).
    */
   validJavaDevNames?: ReadonlySet<string>;
+  /**
+   * Module names the selected agent version has. When set, enable/disable
+   * flags under `distribution.javaagent.instrumentation` for other modules are
+   * left out of the output; builder state still keeps them. Leave undefined to
+   * skip the filter (e.g. while the inventory is loading).
+   */
+  validJavaagentModules?: ReadonlySet<string>;
 }
 
 function defaultHeader(
@@ -235,9 +243,12 @@ export function generateYamlSections(
   const target: ConfigurationTarget = options?.target ?? "javaagent";
   const isSpringStarter = target === "spring_starter";
   const header = options?.header ?? defaultHeader(state.version, options?.javaAgentVersion, target);
-  const values = options?.validJavaDevNames
+  const devFiltered = options?.validJavaDevNames
     ? filterJavaDevValues(state.values, options.validJavaDevNames)
     : state.values;
+  const values = options?.validJavaagentModules
+    ? filterJavaagentModuleValues(devFiltered, options.validJavaagentModules)
+    : devFiltered;
 
   if (schema.controlType !== "group") {
     const fallbackContent = "# Schema is not a group; cannot generate sections.\n";
